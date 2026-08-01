@@ -1,0 +1,13 @@
+pillow
+pyautogui
+pyperclip
+pywin32
+pygetwindow
+openpyxl
+pandas
+numpy
+selenium
+webdriver-manager
+pdfplumber
+pypdf
+requests
