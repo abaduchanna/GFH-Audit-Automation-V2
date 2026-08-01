@@ -1496,14 +1496,15 @@ class GFHAccessoriesAutomationGUI:
         style.map("Treeview", background=[("selected", "#DDE8FF")], foreground=[("selected", TEXT)])
 
     def load_logo_source(self):
-        import tempfile as _tf, base64 as _b64
-        try:
-            _lp = _tf.NamedTemporaryFile(delete=False, suffix=".png")
-            _lp.write(_b64.b64decode(GFH_LOGO_PNG_B64)); _lp.close()
-            self.logo_source = _lp.name
-        except Exception:
+        import os
+        _script_dir = os.path.dirname(os.path.abspath(__file__))
+        _logo_path = os.path.join(_script_dir, "header_logo.png")
+        if os.path.exists(_logo_path):
+            self.logo_source = _logo_path
+        else:
             self.logo_source = None
         try:
+            import tempfile as _tf, base64 as _b64
             _ip = _tf.NamedTemporaryFile(delete=False, suffix=".ico")
             _ip.write(_b64.b64decode(GFH_ICON_ICO_B64)); _ip.close()
             self.root.iconbitmap(_ip.name)
@@ -1514,7 +1515,6 @@ class GFHAccessoriesAutomationGUI:
             self.root.iconphoto(True, self.icon_photo)
         except Exception:
             self.icon_photo = None
-
     def resized_logo(self, max_width=260, max_height=70):
         if not self.logo_source:
             return None
