@@ -2151,14 +2151,10 @@ class GFHApp(tk.Tk):
                 self.iconphoto(True, self._app_icon)
             except Exception:
                 self._app_icon = None
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-        win_w = min(max(int(sw * 0.90), 1220), sw - 20)
-        win_h = min(max(int(sh * 0.90), 720), sh - 60)
-        x = max(0, (sw - win_w) // 2)
-        y = max(0, (sh - win_h) // 2)
-        self.geometry(f"{win_w}x{win_h}+{x}+{y}")
-        self.minsize(min(960, sw - 20), min(580, sh - 60))
+        # Dynamic screen resolution support: size to 90% of the screen and
+        # center it (DPI-aware), then stay a normal resizable top-level so
+        # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
+        self._apply_dynamic_geometry()
         self.zoom_scale = 1.0
         APP_DIR.mkdir(parents=True, exist_ok=True)
         IMAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -2233,6 +2229,30 @@ class GFHApp(tk.Tk):
         self._build_ui()
         self.set_status(f"Ready. Data folder: {APP_DIR}")
         self._start_db_sync_poll()
+
+    def _apply_dynamic_geometry(self) -> None:
+        """Size the window to 90% of the screen and center it.
+
+        Works on any laptop/monitor/PC (1080p, 1440p, 2K, 4K) and respects
+        Windows DPI scaling (run after _enable_dpi_awareness()). The window
+        stays resizable so Windows Snap gestures keep working — it centers
+        on launch, then snaps normally to 50% left/right, corners or via
+        Win+arrow shortcuts.
+        """
+        try:
+            self.update_idletasks()
+            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+            w = max(960, min(int(sw * 0.90), sw - 20))
+            h = max(640, min(int(sh * 0.90), sh - 40))
+            x = max(0, (sw - w) // 2)
+            y = max(0, (sh - h) // 2)
+            self.geometry(f"{w}x{h}+{x}+{y}")
+            # minsize <= half the screen so 50% / corner snap is never blocked
+            self.minsize(min(960, max(640, sw // 2)),
+                         min(580, max(480, sh // 2)))
+            self.resizable(True, True)
+        except Exception:
+            pass
 
     def _apply_styles(self) -> None:
         sz = lambda n: max(6, round(n * self.zoom_scale))
@@ -4702,7 +4722,23 @@ class GFHApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Open folder failed", str(exc))
 
+def _enable_dpi_awareness() -> None:
+    """Make Windows report physical pixels so winfo_screen* is accurate on
+    high-DPI displays (1080p, 1440p, 2K, 4K, DPI-scaled laptops)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)  # system DPI aware
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
 def main() -> None:
+    _enable_dpi_awareness()
     app = GFHApp()
     app.mainloop()
 

@@ -1438,11 +1438,10 @@ class GFHAccessoriesAutomationGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(APP_TITLE)
-        _sw, _sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        _w, _h = int(_sw * 0.9), int(_sh * 0.9)
-        _x, _y = (_sw - _w) // 2, max(0, (_sh - _h) // 2 - 15)
-        self.root.geometry("%dx%d+%d+%d" % (_w, _h, _x, _y))
-        self.root.minsize(min(1180, _w), min(720, _h))
+        # Dynamic screen resolution support: size to 90% of the screen and
+        # center it (DPI-aware), then stay a normal resizable top-level so
+        # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
+        self._apply_dynamic_geometry()
         self.root.configure(bg=APP_BG)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -1463,6 +1462,31 @@ class GFHAccessoriesAutomationGUI:
         self.build_style()
         self.load_logo_source()
         self.build_ui()
+
+    def _apply_dynamic_geometry(self) -> None:
+        """Size the window to 90% of the screen and center it.
+
+        Works on any laptop/monitor/PC (1080p, 1440p, 2K, 4K) and respects
+        Windows DPI scaling (run after _enable_dpi_awareness()). The window
+        stays resizable so Windows Snap gestures keep working — it centers
+        on launch, then snaps normally to 50% left/right, corners or via
+        Win+arrow shortcuts.
+        """
+        try:
+            root = self.root
+            root.update_idletasks()
+            sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+            w = max(700, min(int(sw * 0.90), sw - 20))
+            h = max(480, min(int(sh * 0.90), sh - 40))
+            x = max(0, (sw - w) // 2)
+            y = max(0, (sh - h) // 2)
+            root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+            # minsize <= half the screen so 50% / corner snap is never blocked
+            root.minsize(min(1180, max(640, sw // 2)),
+                         min(720, max(480, sh // 2)))
+            root.resizable(True, True)
+        except Exception:
+            pass
         _cbar = tk.Frame(self.root, bg="#12142B", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
@@ -2105,9 +2129,25 @@ class GFHAccessoriesAutomationGUI:
     def run(self):
         self.root.mainloop()
 
+def _enable_dpi_awareness() -> None:
+    """Make Windows report physical pixels so winfo_screen* is accurate on
+    high-DPI displays (1080p, 1440p, 2K, 4K, DPI-scaled laptops)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)  # system DPI aware
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
+    _enable_dpi_awareness()
     try:
         app = GFHAccessoriesAutomationGUI()
         app.run()
