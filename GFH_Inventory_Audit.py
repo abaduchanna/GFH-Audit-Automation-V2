@@ -204,7 +204,23 @@ IMAGE_DIR = APP_DIR / "whatsapp_images"
 EXPORT_DIR = APP_DIR / "exports"
 STORE_CONFIG_PATH = APP_DIR / "store_master_list.csv"
 PACKAGED_STORE_LIST_PATH = PACKAGE_DIR / "store_master_list.csv"
-HEADER_LOGO_PATH = PACKAGE_DIR / "header_logo.png"
+
+
+def _resource_path(name: str) -> Path:
+    """Resolve a bundled asset for a PyInstaller onefile EXE.
+
+    onefile builds extract data files to sys._MEIPASS at runtime; fall back
+    to the directory next to the app/script for normal runs."""
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            bundled = Path(meipass) / name
+            if bundled.exists():
+                return bundled
+    return PACKAGE_DIR / name
+
+
+HEADER_LOGO_PATH = _resource_path("header_logo.png")
 STATUS_LOGO_PATH = PACKAGE_DIR / "gfh_telecom_llc_logo.png"
 APP_ICON_PATH = PACKAGE_DIR / "gfh_telecom_llc_icon.ico"
 APP_ICON_PNG_PATH = PACKAGE_DIR / "gfh_telecom_llc_logo.png"
@@ -2466,8 +2482,39 @@ class GFHApp(tk.Tk):
         self.status_tree.bind("<Button-1>", self.on_status_tree_click)
 
     def _build_audit_tab(self) -> None:
-        send_box = ttk.LabelFrame(self.audit_tab, text="Variance Audit Controls", padding=10)
-        send_box.pack(fill="x", pady=(0, 8))
+        # ── Variance Audit Controls — one scrollable single line ──────────
+        # Every control sits in a single row inside a horizontal-scroll
+        # canvas, so nothing is ever cut off at small or snapped window
+        # sizes: scroll, trackpad drag or Shift+wheel to reach the rest.
+        toolbar_host = tk.Frame(self.audit_tab)
+        toolbar_host.pack(fill="x", pady=(0, 8))
+        toolbar_canvas = tk.Canvas(toolbar_host, highlightthickness=0, bd=0)
+        toolbar_hbar = ttk.Scrollbar(toolbar_host, orient="horizontal", command=toolbar_canvas.xview)
+        toolbar_canvas.configure(xscrollcommand=toolbar_hbar.set)
+        toolbar_hbar.pack(side="bottom", fill="x")
+        toolbar_canvas.pack(fill="x")
+
+        send_box = ttk.LabelFrame(toolbar_canvas, text="Variance Audit Controls", padding=10)
+        toolbar_canvas.create_window((0, 0), window=send_box, anchor="nw")
+
+        def _sync_toolbar_scroll(_e=None):
+            toolbar_canvas.configure(scrollregion=toolbar_canvas.bbox("all"))
+            desired = send_box.winfo_reqheight() + 2
+            if toolbar_canvas.winfo_height() != desired:
+                toolbar_canvas.configure(height=desired)
+
+        def _toolbar_wheel(event):
+            if event.state & 0x0001:  # Shift held → page scroll
+                factor = 3
+            else:
+                factor = 1
+            toolbar_canvas.xview_scroll(int(-1 * (event.delta / 120)) * factor, "units")
+            return "break"
+
+        send_box.bind("<Configure>", _sync_toolbar_scroll)
+        toolbar_canvas.bind("<Configure>", _sync_toolbar_scroll)
+        toolbar_canvas.bind("<MouseWheel>", _toolbar_wheel)
+
         ttk.Label(send_box, text="Send by:").grid(row=0, column=0, sticky="w")
         audit_mode_picker = ttk.Combobox(send_box, textvariable=self.audit_send_mode, values=["District", "Store", "Sales Rep"], state="readonly", width=14)
         audit_mode_picker.grid(row=0, column=1, padx=(6, 10), sticky="w")
@@ -2491,10 +2538,10 @@ class GFHApp(tk.Tk):
         ttk.Button(send_box, text="Open Folder", command=self.open_app_folder).grid(row=0, column=15, padx=(0, 6))
         ttk.Button(send_box, text="Clear UI", command=self.clear_current_ui).grid(row=0, column=16, padx=(0, 6))
         ttk.Button(send_box, text="Copy IMEI", command=self.copy_selected_imei).grid(row=0, column=17, padx=(0, 6))
-        ttk.Checkbutton(send_box, text="Show cleared", variable=self.include_cleared, command=self.refresh_table).grid(row=1, column=0, columnspan=19, sticky="w", padx=(0, 4), pady=(6, 0))
-        send_box.columnconfigure(1, weight=0)
-        send_box.columnconfigure(3, weight=0)
-        send_box.columnconfigure(5, weight=0)
+        ttk.Checkbutton(send_box, text="Show cleared", variable=self.include_cleared, command=self.refresh_table).grid(row=0, column=18, sticky="w", padx=(4, 0))
+
+        for child in send_box.winfo_children():
+            child.bind("<MouseWheel>", _toolbar_wheel)
 
         # ── Final Send Actions ─────────────────────────────────────────────
         action_box = ttk.LabelFrame(self.audit_tab, text="Final Send Actions", padding=10)
@@ -2502,11 +2549,11 @@ class GFHApp(tk.Tk):
         ttk.Label(action_box, text="District:").grid(row=0, column=0, sticky="w")
         self.final_district_combo = ttk.Combobox(action_box, textvariable=self.final_district_var, values=["All Districts"], state="readonly", width=22)
         self.final_district_combo.grid(row=0, column=1, padx=(6, 12), sticky="w")
-        ttk.Button(action_box, text="Send Final District Result", command=self.send_final_district_result).grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(action_box, text="Send Starting Message", command=self.send_starting_message).grid(row=0, column=3, padx=(0, 6))
-        ttk.Button(action_box, text="Send Reminder 1", command=lambda: self.send_reminder(1)).grid(row=0, column=4, padx=(0, 6))
-        ttk.Button(action_box, text="Send Reminder 2", command=lambda: self.send_reminder(2)).grid(row=0, column=5, padx=(0, 6))
-        ttk.Button(action_box, text="Send Reminder 3", command=lambda: self.send_reminder(3)).grid(row=0, column=6, padx=(0, 6))
+        ttk.Button(action_box, text="Send Starting Message", command=self.send_starting_message).grid(row=0, column=2, padx=(0, 6))
+        ttk.Button(action_box, text="Send Reminder 1", command=lambda: self.send_reminder(1)).grid(row=0, column=3, padx=(0, 6))
+        ttk.Button(action_box, text="Send Reminder 2", command=lambda: self.send_reminder(2)).grid(row=0, column=4, padx=(0, 6))
+        ttk.Button(action_box, text="Send Reminder 3", command=lambda: self.send_reminder(3)).grid(row=0, column=5, padx=(0, 6))
+        ttk.Button(action_box, text="Send Final District Result", command=self.send_final_district_result).grid(row=0, column=6, padx=(0, 6))
 
         # Search box — single row
         search_box = ttk.LabelFrame(self.audit_tab, text="Search Variance Rows", padding=8)

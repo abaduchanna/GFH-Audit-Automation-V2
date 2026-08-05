@@ -29,6 +29,7 @@ jobs:
           pyinstaller --onefile --windowed --clean
           --name "GFH_Inventory_Audit"
           --icon "gfh_telecom_llc_icon.ico"
+          --add-data "header_logo.png;."
           --hidden-import win32gui --hidden-import win32con
           --hidden-import win32api --hidden-import win32process
           "GFH_Inventory_Audit.py"
