@@ -1438,10 +1438,6 @@ class GFHAccessoriesAutomationGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(APP_TITLE)
-        # Dynamic screen resolution support: size to 90% of the screen and
-        # center it (DPI-aware), then stay a normal resizable top-level so
-        # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
-        self._apply_dynamic_geometry()
         self.root.configure(bg=APP_BG)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -1462,6 +1458,25 @@ class GFHAccessoriesAutomationGUI:
         self.build_style()
         self.load_logo_source()
         self.build_ui()
+
+        # ── Copyright bar — always visible at the very bottom ──────────────
+        _cbar = tk.Frame(self.root, bg="#12142B", height=24)
+        _cbar.pack(fill="x", side="bottom")
+        _cbar.pack_propagate(False)
+        tk.Label(_cbar, text="Created by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
+                 font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B").pack(side="left", padx=14, pady=3)
+
+        load_stores()  # Load stores safely before refreshing the list
+        self.refresh_store_list()
+        self.refresh_file_table()
+        self.update_summary(total=0, processed=0, completed=0, pending=0)
+
+        # Dynamic screen resolution support: size to 90% of the screen and
+        # center it (DPI-aware), then stay a normal resizable top-level so
+        # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
+        self._apply_dynamic_geometry()
+
+        self.root.after(120, self.process_queues)
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -1487,17 +1502,6 @@ class GFHAccessoriesAutomationGUI:
             root.resizable(True, True)
         except Exception:
             pass
-        _cbar = tk.Frame(self.root, bg="#12142B", height=24)
-        _cbar.pack(fill="x", side="bottom")
-        _cbar.pack_propagate(False)
-        tk.Label(_cbar, text="Created by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
-                 font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B").pack(side="left", padx=14, pady=3)
-        
-        load_stores()  # Load stores safely before refreshing the list
-        self.refresh_store_list()
-        self.refresh_file_table()
-        self.update_summary(total=0, processed=0, completed=0, pending=0)
-        self.root.after(120, self.process_queues)
 
     def _on_mousewheel(self, event):
         """Scrolls the canvas reliably on MouseWheel events"""
@@ -2153,4 +2157,11 @@ if __name__ == "__main__":
         app.run()
     except Exception:
         traceback.print_exc()
-        input("\nPress Enter to close...")
+        try:
+            messagebox.showerror("GFH Accessories Ordering — Error",
+                                 "The app hit an error during startup.\n\n"
+                                 + traceback.format_exc())
+        except Exception:
+            pass
+        if sys.stdin and sys.stdin.isatty():
+            input("\nPress Enter to close...")
