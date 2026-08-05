@@ -2461,7 +2461,7 @@ class GFHApp(tk.Tk):
         ttk.Button(send_box, text="Open Folder", command=self.open_app_folder).grid(row=0, column=15, padx=(0, 6))
         ttk.Button(send_box, text="Clear UI", command=self.clear_current_ui).grid(row=0, column=16, padx=(0, 6))
         ttk.Button(send_box, text="Copy IMEI", command=self.copy_selected_imei).grid(row=0, column=17, padx=(0, 6))
-        ttk.Checkbutton(send_box, text="Show cleared", variable=self.include_cleared, command=self.refresh_table).grid(row=0, column=18, padx=(4, 0), sticky="w")
+        ttk.Checkbutton(send_box, text="Show cleared", variable=self.include_cleared, command=self.refresh_table).grid(row=1, column=0, columnspan=19, sticky="w", padx=(0, 4), pady=(6, 0))
         send_box.columnconfigure(1, weight=0)
         send_box.columnconfigure(3, weight=0)
         send_box.columnconfigure(5, weight=0)
