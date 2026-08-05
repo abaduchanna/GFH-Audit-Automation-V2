@@ -2130,17 +2130,27 @@ class GFHApp(tk.Tk):
         super().__init__()
         self.title(APP_NAME)
         self._app_icon = None
+        # Windows needs an AppUserModelID or the taskbar can show a
+        # blank/generic icon even when the titlebar icon is set.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "GFHTelecom.InventoryAudit")
+        except Exception:
+            pass
         ensure_app_icon_files()
         try:
             if APP_ICON_PATH.exists() and sys.platform.startswith("win"):
                 self.iconbitmap(str(APP_ICON_PATH))
         except Exception:
-            pass
-        try:
-            self._app_icon = tk.PhotoImage(data=GFH_SQUARE_ICON_B64)
-            self.iconphoto(True, self._app_icon)
-        except Exception:
-            self._app_icon = None
+            # Fallback: brand PNG via iconphoto only if the .ico failed —
+            # a transparent PNG used with iconphoto(True) can blank the
+            # taskbar icon on Windows.
+            try:
+                self._app_icon = tk.PhotoImage(data=GFH_SQUARE_ICON_B64)
+                self.iconphoto(True, self._app_icon)
+            except Exception:
+                self._app_icon = None
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         win_w = min(max(int(sw * 0.90), 1220), sw - 20)
