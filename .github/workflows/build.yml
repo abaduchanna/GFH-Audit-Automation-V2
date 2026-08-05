@@ -52,6 +52,7 @@ jobs:
           pyinstaller --onefile --windowed --clean
           --name "GFH_Accessories_Ordering"
           --icon "gfh_telecom_llc_icon.ico"
+          --add-data "header_logo.png;."
           --collect-all selenium
           --collect-all webdriver_manager
           "GFH_Accessories_Ordering.py"

@@ -1455,16 +1455,19 @@ class GFHAccessoriesAutomationGUI:
 
         set_log_callback(self.enqueue_log)
         set_progress_callback(self.enqueue_progress)
-        self.build_style()
-        self.load_logo_source()
-        self.build_ui()
 
-        # ── Copyright bar — always visible at the very bottom ──────────────
+        # ── Copyright bar — packed FIRST so it is ALWAYS visible. If packed
+        # after the expanding body (fill=BOTH, expand=True), the body consumes
+        # the whole pack cavity and squeezes this bar to zero height. ────────
         _cbar = tk.Frame(self.root, bg="#12142B", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
         tk.Label(_cbar, text="Created by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
                  font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B").pack(side="left", padx=14, pady=3)
+
+        self.build_style()
+        self.load_logo_source()
+        self.build_ui()
 
         load_stores()  # Load stores safely before refreshing the list
         self.refresh_store_list()
@@ -1525,12 +1528,16 @@ class GFHAccessoriesAutomationGUI:
 
     def load_logo_source(self):
         import os
-        _script_dir = os.path.dirname(os.path.abspath(__file__))
-        _logo_path = os.path.join(_script_dir, "header_logo.png")
-        if os.path.exists(_logo_path):
-            self.logo_source = _logo_path
-        else:
-            self.logo_source = None
+        # PyInstaller onefile extracts bundled data to sys._MEIPASS; the logo
+        # ships via --add-data, so check there first, then exe/script dir.
+        _candidates = []
+        if getattr(sys, "frozen", False):
+            _meipass = getattr(sys, "_MEIPASS", None)
+            if _meipass:
+                _candidates.append(os.path.join(_meipass, "header_logo.png"))
+            _candidates.append(os.path.join(os.path.dirname(sys.executable), "header_logo.png"))
+        _candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "header_logo.png"))
+        self.logo_source = next((p for p in _candidates if os.path.exists(p)), None)
         # Windows needs an AppUserModelID or the taskbar can show a
         # blank/generic icon even when the titlebar icon is set.
         try:
