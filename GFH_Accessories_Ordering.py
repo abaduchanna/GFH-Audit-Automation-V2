@@ -1,4 +1,4 @@
-# Created by Abad Umair Channa  |  Copyright (c) 2026. All rights reserved.
+# Developed by Abad Umair Channa  |  Copyright (c) 2026. All rights reserved.
 #!/usr/bin/env python3
 """
 GFH Telecom LLC Accessories Ordering Automation - GUI FINAL
@@ -33,6 +33,7 @@ from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 import tkinter as tk
+from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
 from tkinter import ttk, filedialog, messagebox, simpledialog
 from tkinter.scrolledtext import ScrolledText
 
@@ -1462,7 +1463,7 @@ class GFHAccessoriesAutomationGUI:
         _cbar = tk.Frame(self.root, bg="#12142B", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
-        tk.Label(_cbar, text="Created by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
+        tk.Label(_cbar, text="Developed by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
                  font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B").pack(side="left", padx=14, pady=3)
 
         self.build_style()
