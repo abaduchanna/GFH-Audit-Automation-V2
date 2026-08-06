@@ -2414,7 +2414,7 @@ class GFHApp(tk.Tk):
 
     def _build_status_tab(self) -> None:
         controls = ttk.LabelFrame(self.status_tab, text="Send Inventory Audit Status", padding=10)
-        controls.pack(fill="x", pady=(0, 8))
+        controls.pack(fill="x", pady=(0, 5))
         ttk.Label(controls, text="Send by:").grid(row=0, column=0, sticky="w")
         status_mode = ttk.Combobox(controls, textvariable=self.status_send_mode, values=["District", "Store", "Sales Rep"], state="readonly", width=14)
         status_mode.grid(row=0, column=1, padx=(6, 12), sticky="w")
@@ -2435,7 +2435,7 @@ class GFHApp(tk.Tk):
 
         # Search — single row
         status_search_box = ttk.LabelFrame(self.status_tab, text="Search Inventory Audit Status", padding=8)
-        status_search_box.pack(fill="x", pady=(0, 8))
+        status_search_box.pack(fill="x", pady=(0, 5))
         status_search_fields = [
             ("Any", self.status_search_any_var, 14),
             ("District", self.status_search_district_var, 12),
@@ -2451,7 +2451,7 @@ class GFHApp(tk.Tk):
         ttk.Button(status_search_box, text="Clear", command=self.clear_status_search).grid(row=0, column=10, sticky="w")
 
         cols = ("district", "store", "status", "rep_name", "checkbox")
-        self.status_tree = ttk.Treeview(self.status_tab, columns=cols, show="headings", selectmode="browse")
+        self.status_tree = ttk.Treeview(self.status_tab, columns=cols, show="headings", selectmode="browse", height=12)
         headings = {
             "district": "District",
             "store": "Store",
@@ -2459,7 +2459,7 @@ class GFHApp(tk.Tk):
             "rep_name": "Rep Name",
             "checkbox": "Checkbox",
         }
-        widths = {"district": 160, "store": 250, "status": 130, "rep_name": 220, "checkbox": 120}
+        widths = {"district": 130, "store": 200, "status": 110, "rep_name": 170, "checkbox": 95}
         for col in cols:
             self.status_tree.heading(col, text=headings[col], command=lambda c=col: self.sort_any_tree(self.status_tree, c, False))
             self.status_tree.column(col, width=widths[col], minwidth=80, anchor="w")
@@ -2487,7 +2487,7 @@ class GFHApp(tk.Tk):
         # canvas, so nothing is ever cut off at small or snapped window
         # sizes: scroll, trackpad drag or Shift+wheel to reach the rest.
         toolbar_host = tk.Frame(self.audit_tab)
-        toolbar_host.pack(fill="x", pady=(0, 8))
+        toolbar_host.pack(fill="x", pady=(0, 5))
         toolbar_canvas = tk.Canvas(toolbar_host, highlightthickness=0, bd=0)
         toolbar_hbar = ttk.Scrollbar(toolbar_host, orient="horizontal", command=toolbar_canvas.xview)
         toolbar_canvas.configure(xscrollcommand=toolbar_hbar.set)
@@ -2544,8 +2544,8 @@ class GFHApp(tk.Tk):
             child.bind("<MouseWheel>", _toolbar_wheel)
 
         # ── Final Send Actions ─────────────────────────────────────────────
-        action_box = ttk.LabelFrame(self.audit_tab, text="Final Send Actions", padding=10)
-        action_box.pack(fill="x", pady=(0, 8))
+        action_box = ttk.LabelFrame(self.audit_tab, text="Final Send Actions", padding=(10, 6))
+        action_box.pack(fill="x", pady=(0, 5))
         ttk.Label(action_box, text="District:").grid(row=0, column=0, sticky="w")
         self.final_district_combo = ttk.Combobox(action_box, textvariable=self.final_district_var, values=["All Districts"], state="readonly", width=22)
         self.final_district_combo.grid(row=0, column=1, padx=(6, 12), sticky="w")
@@ -2557,7 +2557,7 @@ class GFHApp(tk.Tk):
 
         # Search box — single row
         search_box = ttk.LabelFrame(self.audit_tab, text="Search Variance Rows", padding=8)
-        search_box.pack(fill="x", pady=(0, 8))
+        search_box.pack(fill="x", pady=(0, 5))
         search_fields = [
             ("Any", self.audit_search_any_var, 14),
             ("District", self.audit_search_district_var, 12),
@@ -2574,7 +2574,7 @@ class GFHApp(tk.Tk):
         ttk.Button(search_box, text="Clear", command=self.clear_audit_search).grid(row=0, column=12, sticky="w")
 
         columns = ("district", "store", "product", "imei", "status", "rep_name", "clearance", "checkbox")
-        self.audit_tree = ttk.Treeview(self.audit_tab, columns=columns, show="headings", selectmode="extended")
+        self.audit_tree = ttk.Treeview(self.audit_tab, columns=columns, show="headings", selectmode="extended", height=12)
         headings = {
             "district": "District",
             "store": "Store",
@@ -2585,7 +2585,7 @@ class GFHApp(tk.Tk):
             "clearance": "Clearance",
             "checkbox": "Checkbox",
         }
-        widths = {"district": 130, "store": 180, "product": 365, "imei": 155, "status": 110, "rep_name": 200, "clearance": 110, "checkbox": 105}
+        widths = {"district": 110, "store": 150, "product": 280, "imei": 130, "status": 100, "rep_name": 170, "clearance": 110, "checkbox": 85}
         for col in columns:
             self.audit_tree.heading(col, text=headings[col], command=lambda c=col: self.sort_any_tree(self.audit_tree, c, False))
             self.audit_tree.column(col, width=widths[col], minwidth=80, anchor="w")
@@ -2637,7 +2637,7 @@ class GFHApp(tk.Tk):
         ttk.Button(store_search_box, text="Clear", command=lambda: (self.store_search_var.set(""), self.refresh_store_accounts_table())).pack(side="left")
 
         columns = ("district", "store")
-        self.store_tree = ttk.Treeview(self.store_tab, columns=columns, show="headings", selectmode="browse")
+        self.store_tree = ttk.Treeview(self.store_tab, columns=columns, show="headings", selectmode="browse", height=12)
         headings = {
             "district": "District",
             "store": "Store",
@@ -2672,7 +2672,7 @@ class GFHApp(tk.Tk):
         ttk.Button(rep_search_box, text="Clear", command=lambda: (self.rep_search_var.set(""), self.refresh_sales_reps_table())).pack(side="left")
 
         columns = ("rep_name", "phone")
-        self.rep_tree = ttk.Treeview(self.rep_tab, columns=columns, show="headings", selectmode="browse")
+        self.rep_tree = ttk.Treeview(self.rep_tab, columns=columns, show="headings", selectmode="browse", height=12)
         self.rep_tree.heading("rep_name", text="Employee Name", command=lambda: self.sort_any_tree(self.rep_tree, "rep_name", False))
         self.rep_tree.heading("phone", text="Phone Number", command=lambda: self.sort_any_tree(self.rep_tree, "phone", False))
         self.rep_tree.column("rep_name", width=320, minwidth=120, anchor="w")
@@ -3235,7 +3235,7 @@ class GFHApp(tk.Tk):
         ttk.Button(exclusion_search_box, text="Clear", command=lambda: (self.exclusion_search_var.set(""), self.refresh_device_exclusions_table())).pack(side="left")
 
         columns = ("district", "product", "imei", "comments")
-        self.exclusion_tree = ttk.Treeview(self.exclusion_tab, columns=columns, show="headings", selectmode="browse")
+        self.exclusion_tree = ttk.Treeview(self.exclusion_tab, columns=columns, show="headings", selectmode="browse", height=12)
         self.exclusion_tree.heading("district", text="District", command=lambda: self.sort_any_tree(self.exclusion_tree, "district", False))
         self.exclusion_tree.heading("product", text="Product", command=lambda: self.sort_any_tree(self.exclusion_tree, "product", False))
         self.exclusion_tree.heading("imei", text="IMEI", command=lambda: self.sort_any_tree(self.exclusion_tree, "imei", False))
