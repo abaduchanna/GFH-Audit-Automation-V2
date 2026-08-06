@@ -1,62 +1,49 @@
-name: Build GFH EXEs
+name: Build Windows .exe
+
 on:
   push:
-    branches: [main, master]
+    branches: [ main, master, develop ]
+    paths:
+      - '**.py'
+      - 'requirements.txt'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [ main, master, develop ]
   workflow_dispatch:
-permissions:
-  contents: write
+
 jobs:
-  create_release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: GFH Build ${{ github.run_number }}
-  build_inventory:
-    needs: create_release
+  build:
     runs-on: windows-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
-      - run: >
-          pyinstaller --onefile --windowed --clean
-          --name "GFH_Inventory_Audit"
-          --icon "gfh_telecom_llc_icon.ico"
-          --add-data "header_logo.png;."
-          --hidden-import win32gui --hidden-import win32con
-          --hidden-import win32api --hidden-import win32process
-          "GFH_Inventory_Audit.py"
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          files: dist/GFH_Inventory_Audit.exe
-  build_accessories:
-    needs: create_release
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
-      - run: >
-          pyinstaller --onefile --windowed --clean
-          --name "GFH_Accessories_Ordering"
-          --icon "gfh_telecom_llc_icon.ico"
-          --add-data "header_logo.png;."
-          --collect-all selenium
-          --collect-all webdriver_manager
-          "GFH_Accessories_Ordering.py"
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          files: dist/GFH_Accessories_Ordering.exe
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r requirements.txt
+    
+    - name: Build executable
+      run: |
+        pyinstaller GFH_Inventory_Audit.spec
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: Vidapay Gfh-windows-exe
+        path: dist/
+        retention-days: 30
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*.exe
+      env:
+        GITHUB_TOKEN: ${ secrets.GITHUB_TOKEN }
