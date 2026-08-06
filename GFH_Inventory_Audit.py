@@ -1,4 +1,4 @@
-# Created by Abad Umair Channa  |  Copyright (c) 2026. All rights reserved.
+# Developed by Abad Umair Channa  |  Copyright (c) 2026. All rights reserved.
 """
 GFH Telecom LLC Inventory Audit v27
 
@@ -67,6 +67,7 @@ def _auto_install_packages() -> None:
     # Show a quick tk splash so the user knows something is happening
     try:
         import tkinter as _tk
+from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
         _splash = _tk.Tk()
         _splash.title("GFH Inventory Audit — Installing packages…")
         _splash.geometry("540x90")
@@ -2341,7 +2342,7 @@ class GFHApp(tk.Tk):
         _cbar.pack_propagate(False)
         tk.Label(
             _cbar,
-            text="Created by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
+            text="Developed by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
             font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B",
         ).pack(side="left", padx=14, pady=3)
 
