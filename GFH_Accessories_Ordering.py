@@ -34,7 +34,7 @@ from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 import tkinter as tk
-from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
+from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
 from tkinter import ttk, filedialog, messagebox, simpledialog
 from tkinter.scrolledtext import ScrolledText
 
@@ -1464,11 +1464,12 @@ class GFHAccessoriesAutomationGUI:
         _cbar = tk.Frame(self.root, bg="#12142B", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
-        tk.Label(_cbar, text="Developed by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
+        tk.Label(_cbar, text=f"Developed by Abad Umair Channa  |  Copyright © {get_copyright_year()}  |  All rights reserved.",
                  font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B").pack(side="left", padx=14, pady=3)
 
         self.build_style()
         self.load_logo_source()
+        self.theme_manager = ThemeManager("GFH Accessories Ordering")
         self.build_ui()
 
         load_stores()  # Load stores safely before refreshing the list
@@ -1482,6 +1483,8 @@ class GFHAccessoriesAutomationGUI:
         self._apply_dynamic_geometry()
 
         self.root.after(120, self.process_queues)
+
+        apply_theme_to_window(self.root, self.theme_manager)
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -1582,6 +1585,7 @@ class GFHAccessoriesAutomationGUI:
 
     def build_ui(self):
         self.header = tk.Frame(self.root, bg=NAVY, height=92)
+        self.header._tag = "header"
         self.header.pack(side=tk.TOP, fill=tk.X)
         self.header.pack_propagate(False)
 
@@ -1609,6 +1613,12 @@ class GFHAccessoriesAutomationGUI:
         self.main = tk.Frame(body, bg=APP_BG)
         self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=16, pady=16)
         self.build_dashboard()
+
+        theme_btn = create_theme_toggle_button(self.header, self.theme_manager)
+        theme_btn.pack(side=tk.RIGHT, padx=16)
+
+    def _apply_theme(self, colors=None):
+        apply_theme_to_window(self.root, self.theme_manager)
 
     def on_header_resize(self, event):
         height = max(46, min(72, event.height - 20))
