@@ -14,7 +14,10 @@ a = Analysis(
     ['GFH_Accessories_Ordering.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('gfh_telecom_llc_icon.ico', '.'),
+        ('header_logo.png', '.'),
+    ],
     hiddenimports=[
         'tkinter',
         'selenium',
@@ -26,12 +29,12 @@ a = Analysis(
         'pyperclip',
         'requests',
         'theme_manager',
+        'logo_handler',
         'PIL',
         'pandas',
         'gspread',
         'oauth2client',
         'pywin32',
-        'logo_handler',
     ],
     hookspath=[],
     hooksconfig={},
@@ -64,4 +67,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='gfh_telecom_llc_icon.ico',
 )
