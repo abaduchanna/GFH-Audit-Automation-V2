@@ -67,7 +67,7 @@ def _auto_install_packages() -> None:
     # Show a quick tk splash so the user knows something is happening
     try:
         import tkinter as _tk
-        from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
+        from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
         _splash = _tk.Tk()
         _splash.title("GFH Inventory Audit — Installing packages…")
         _splash.geometry("540x90")
@@ -106,7 +106,7 @@ def _auto_install_packages() -> None:
     if not success:
         try:
             import tkinter as _tk2
-            from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
+            from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
             import tkinter.messagebox as _mb
             _r2 = _tk2.Tk(); _r2.withdraw()
             _mb.showerror(
@@ -146,7 +146,7 @@ import xml.etree.ElementTree as ET
 
 try:
     import tkinter as tk
-    from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
+    from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
     from tkinter import filedialog, messagebox, ttk, simpledialog
 except Exception as exc:
     raise RuntimeError("Tkinter is required. Use the standard Windows Python installer.") from exc
@@ -2245,9 +2245,11 @@ class GFHApp(tk.Tk):
         self.status_checked_keys: set[str] = set()
         self.audit_checked_keys: set[str] = set()
 
+        self.theme_manager = ThemeManager("GFH Inventory Audit")
         self._build_ui()
         self.set_status(f"Ready. Data folder: {APP_DIR}")
         self._start_db_sync_poll()
+        apply_theme_to_window(self, self.theme_manager)
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -2344,7 +2346,7 @@ class GFHApp(tk.Tk):
         _cbar.pack_propagate(False)
         tk.Label(
             _cbar,
-            text="Developed by Abad Umair Channa  |  Copyright © 2026  |  All rights reserved.",
+            text=f"Developed by Abad Umair Channa  |  Copyright © {dt.date.today().year}  |  All rights reserved.",
             font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B",
         ).pack(side="left", padx=14, pady=3)
 
@@ -2353,6 +2355,7 @@ class GFHApp(tk.Tk):
         root.pack(fill="both", expand=True)
 
         header = ttk.Frame(root, style="Brand.TFrame", padding=(18, 14))
+        header._tag = "header"
         header.pack(fill="x")
 
         self.header_logo_img = None
@@ -2414,6 +2417,12 @@ class GFHApp(tk.Tk):
 
         status_bar = ttk.Label(root, textvariable=self.status_text, anchor="w", relief="sunken", padding=6, foreground=self.COLOR_NAVY, background="#E9ECF5")
         status_bar.pack(fill="x", pady=(8, 0))
+
+        theme_btn = create_theme_toggle_button(header, self.theme_manager)
+        theme_btn.pack(side="right")
+
+    def _apply_theme(self, colors=None):
+        apply_theme_to_window(self, self.theme_manager)
 
     def _build_status_tab(self) -> None:
         controls = ttk.LabelFrame(self.status_tab, text="Send Inventory Audit Status", padding=10)
