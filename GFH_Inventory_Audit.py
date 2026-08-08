@@ -2161,8 +2161,12 @@ class GFHApp(tk.Tk):
         except Exception:
             pass
         ensure_app_icon_files()
+        # Use EMBEDDED_ICON_B64 first (self-contained, works in frozen .exe)
         try:
-            if APP_ICON_PATH.exists() and sys.platform.startswith("win"):
+            _embedded_ico = _extract_embedded_icon(EMBEDDED_ICON_B64, "app_icon.ico")
+            if _embedded_ico:
+                self.iconbitmap(_embedded_ico)
+            elif APP_ICON_PATH.exists() and sys.platform.startswith("win"):
                 self.iconbitmap(str(APP_ICON_PATH))
         except Exception:
             # Fallback: brand PNG via iconphoto only if the .ico failed —
