@@ -1417,8 +1417,8 @@ class CPWHOrderAutomator:
 
 APP_TITLE = "GFH Telecom LLC Accessories Ordering Automation"
 APP_BG = "#F4F6FA"
-NAVY = "#161632"
-NAVY_2 = "#20204A"
+NAVY = "#090d26"        # matches theme_manager.py navy — header blends with logo
+NAVY_2 = "#050817"
 RED = "#E91B2F"
 TEXT = "#111827"
 MUTED = "#6B7280"
