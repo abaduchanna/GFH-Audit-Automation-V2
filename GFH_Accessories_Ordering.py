@@ -1555,10 +1555,15 @@ class GFHAccessoriesAutomationGUI:
         except Exception:
             pass
         try:
-            import tempfile as _tf, base64 as _b64
-            _ip = _tf.NamedTemporaryFile(delete=False, suffix=".ico")
-            _ip.write(_b64.b64decode(GFH_ICON_ICO_B64)); _ip.close()
-            self.root.iconbitmap(_ip.name)
+            # Use EMBEDDED_ICON_B64 first (self-contained, works in frozen .exe)
+            _embedded_ico = _extract_embedded_icon(EMBEDDED_ICON_B64, "app_icon.ico")
+            if _embedded_ico:
+                self.root.iconbitmap(_embedded_ico)
+            else:
+                import tempfile as _tf, base64 as _b64
+                _ip = _tf.NamedTemporaryFile(delete=False, suffix=".ico")
+                _ip.write(_b64.b64decode(GFH_ICON_ICO_B64)); _ip.close()
+                self.root.iconbitmap(_ip.name)
         except Exception:
             # Fallback: brand PNG via iconphoto only if the .ico failed —
             # a transparent PNG used with iconphoto(True) can blank the
