@@ -1532,6 +1532,8 @@ class GFHAccessoriesAutomationGUI:
         style.map("Dark.TButton", background=[("active", "#111A43"), ("disabled", "#9CA3AF")])
         style.configure("Treeview", rowheight=32, font=("Segoe UI", 10), borderwidth=0)
         style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), background="#EEF1F6", foreground=TEXT)
+
+        style.map("Treeview.Heading")
         style.map("Treeview", background=[("selected", "#DDE8FF")], foreground=[("selected", TEXT)])
 
     def load_logo_source(self):
