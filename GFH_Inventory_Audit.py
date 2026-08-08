@@ -2328,7 +2328,7 @@ class GFHApp(tk.Tk):
         except Exception:
             pass
 
-        self.COLOR_NAVY = "#161632"
+        self.COLOR_NAVY = "#090d26"   # matches theme_manager.py navy — header blends with logo
         self.COLOR_RED = "#E91B2F"
         self.COLOR_BG = "#F3F5FA"
         self.COLOR_CARD = "#FFFFFF"
