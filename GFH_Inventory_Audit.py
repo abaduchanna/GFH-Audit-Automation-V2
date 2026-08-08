@@ -2421,7 +2421,7 @@ class GFHApp(tk.Tk):
         status_bar = ttk.Label(root, textvariable=self.status_text, anchor="w", relief="sunken", padding=6, foreground=self.COLOR_NAVY, background="#E9ECF5")
         status_bar.pack(fill="x", pady=(8, 0))
 
-        theme_btn = create_theme_toggle_button(header, self.theme_manager)
+        theme_btn = create_theme_toggle_button(header, self.theme_manager, on_toggle=self._apply_theme)
         theme_btn.pack(side="right")
 
     def _apply_theme(self, colors=None):
