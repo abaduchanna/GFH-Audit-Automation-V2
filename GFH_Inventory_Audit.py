@@ -2139,7 +2139,7 @@ def show_startup_error(exc: BaseException) -> None:
     try:
         root = tk.Tk()
 try:
-    root.iconbitmap("GFH_Telecom_TBLogo.ico")
+    root.iconbitmap("gfh_icon_white.ico")
 except:
     pass  # Icon file not found
         root.withdraw()
