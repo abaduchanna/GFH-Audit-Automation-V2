@@ -119,7 +119,9 @@ def _auto_install_packages() -> None:
         except Exception:
             pass
 
-_auto_install_packages()
+# Skip auto-install in frozen .exe (PyInstaller) — packages are already bundled
+if not getattr(sys, "frozen", False):
+    _auto_install_packages()
 
 
 import csv
