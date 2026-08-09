@@ -1567,12 +1567,9 @@ class GFHAccessoriesAutomationGUI:
                 _ip.write(_b64.b64decode(GFH_ICON_ICO_B64)); _ip.close()
                 self.root.iconbitmap(_ip.name)
         except Exception:
-            # Fallback: brand PNG via iconphoto only if the .ico failed —
-            # a transparent PNG used with iconphoto(True) can blank the
             # taskbar icon on Windows.
             try:
                 self.icon_photo = tk.PhotoImage(data=GFH_SQUARE_ICON_B64)
-                self.root.iconphoto(True, self.icon_photo)
             except Exception:
                 self.icon_photo = None
     def resized_logo(self, max_width=260, max_height=70):
