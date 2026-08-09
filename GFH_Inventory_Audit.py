@@ -2189,7 +2189,7 @@ class GFHApp(tk.Tk):
         self.db = VarianceDatabase(DB_PATH)
         # Track file mtime for cross-instance sync.
         try:
-            self._db_mtime: float = DB_PATH.stat().st_mtime
+            self._db_mtime: float = DB_PATH.stat().st_mtime if DB_PATH.exists() else 0.0
         except Exception:
             self._db_mtime = 0.0
         self._db_sync_paused: bool = False   # paused while THIS instance is writing
@@ -4740,7 +4740,7 @@ class GFHApp(tk.Tk):
     def _check_db_sync(self) -> None:
         """Called every 2 s.  If another instance modified the DB, refresh GUI."""
         try:
-            if not self._db_sync_paused:
+            if not self._db_sync_paused and DB_PATH.exists():
                 mtime = DB_PATH.stat().st_mtime
                 if mtime != self._db_mtime:
                     self._db_mtime = mtime
