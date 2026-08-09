@@ -2138,6 +2138,10 @@ def show_startup_error(exc: BaseException) -> None:
             pass
     try:
         root = tk.Tk()
+try:
+    root.iconbitmap("GFH_Telecom_TBLogo.ico")
+except:
+    pass  # Icon file not found
         root.withdraw()
         messagebox.showerror("GFH Inventory Audit Error", str(exc))
         root.destroy()
