@@ -2171,12 +2171,9 @@ class GFHApp(tk.Tk):
             elif APP_ICON_PATH.exists() and sys.platform.startswith("win"):
                 self.iconbitmap(str(APP_ICON_PATH))
         except Exception:
-            # Fallback: brand PNG via iconphoto only if the .ico failed —
-            # a transparent PNG used with iconphoto(True) can blank the
             # taskbar icon on Windows.
             try:
                 self._app_icon = tk.PhotoImage(data=GFH_SQUARE_ICON_B64)
-                self.iconphoto(True, self._app_icon)
             except Exception:
                 self._app_icon = None
         # Dynamic screen resolution support: size to 90% of the screen and
