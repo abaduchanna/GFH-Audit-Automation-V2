@@ -2154,16 +2154,15 @@ class GFHApp(tk.Tk):
         super().__init__()
         self.title(APP_NAME)
         self._app_icon = None
-        # Windows needs an AppUserModelID or the taskbar can show a
-        # blank/generic icon even when the titlebar icon is set.
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "GFHTelecom.InventoryAudit")
-        except Exception:
-            pass
-        # Try _MEIPASS first (PyInstaller onefile extraction dir)
+        # NOTE: AppUserModelID is set in _enable_dpi_awareness() (called from
+        # main() BEFORE this Tk window is created). Setting it here would be
+        # too late — Windows has already grouped the taskbar button.
+        # Set the window icon BEFORE _apply_dynamic_geometry() — that method
+        # calls update_idletasks() which realizes the window, and the icon
+        # must be set before realization or the taskbar/titlebar icon is lost.
         import sys as _sys, os as _os
+        _icon_set = False
+        # Try _MEIPASS first (PyInstaller onefile extraction dir)
         _meipass = getattr(_sys, "_MEIPASS", None)
         if _meipass:
             for _ico_name in ("gfh_icon_white.ico", "gfh_telecom_llc_icon.ico", "icon.ico"):
@@ -2171,20 +2170,22 @@ class GFHApp(tk.Tk):
                 if _os.path.exists(_ico_path):
                     try:
                         self.iconbitmap(_ico_path)
+                        _icon_set = True
                     except Exception:
                         pass
                     break
-        # Fallback: decode EMBEDDED_ICON_B64 to %TEMP%
-        try:
-            import base64 as _b64, tempfile as _tf
-            _data = _b64.b64decode(EMBEDDED_ICON_B64.strip())
-            _tmp_dir = _os.environ.get("TEMP", _tf.gettempdir())
-            _ico_path = _os.path.join(_tmp_dir, "gfh_audit_icon.ico")
-            with open(_ico_path, "wb") as _f:
-                _f.write(_data)
-            self.iconbitmap(_ico_path)
-        except Exception:
-            pass
+        # Fallback: decode EMBEDDED_ICON_B64 to %TEMP% (only if _MEIPASS failed)
+        if not _icon_set:
+            try:
+                import base64 as _b64, tempfile as _tf
+                _data = _b64.b64decode(EMBEDDED_ICON_B64.strip())
+                _tmp_dir = _os.environ.get("TEMP", _tf.gettempdir())
+                _ico_path = _os.path.join(_tmp_dir, "gfh_audit_icon.ico")
+                with open(_ico_path, "wb") as _f:
+                    _f.write(_data)
+                self.iconbitmap(_ico_path)
+            except Exception:
+                pass
         # Dynamic screen resolution support: size to 90% of the screen and
         # center it (DPI-aware), then stay a normal resizable top-level so
         # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
@@ -4804,7 +4805,7 @@ def _enable_dpi_awareness() -> None:
     try:
         import ctypes
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.InventoryAudit")
         except Exception:
             pass
         try:
