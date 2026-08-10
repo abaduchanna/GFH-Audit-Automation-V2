@@ -2162,20 +2162,29 @@ class GFHApp(tk.Tk):
                 "GFHTelecom.InventoryAudit")
         except Exception:
             pass
-        ensure_app_icon_files()
-        # Use EMBEDDED_ICON_B64 first (self-contained, works in frozen .exe)
+        # Try _MEIPASS first (PyInstaller onefile extraction dir)
+        import sys as _sys, os as _os
+        _meipass = getattr(_sys, "_MEIPASS", None)
+        if _meipass:
+            for _ico_name in ("gfh_icon_white.ico", "gfh_telecom_llc_icon.ico", "icon.ico"):
+                _ico_path = _os.path.join(_meipass, _ico_name)
+                if _os.path.exists(_ico_path):
+                    try:
+                        self.iconbitmap(_ico_path)
+                    except Exception:
+                        pass
+                    break
+        # Fallback: decode EMBEDDED_ICON_B64 to %TEMP%
         try:
-            _embedded_ico = _extract_embedded_icon(EMBEDDED_ICON_B64, "app_icon.ico")
-            if _embedded_ico:
-                self.iconbitmap(_embedded_ico)
-            elif APP_ICON_PATH.exists() and sys.platform.startswith("win"):
-                self.iconbitmap(str(APP_ICON_PATH))
+            import base64 as _b64, tempfile as _tf
+            _data = _b64.b64decode(EMBEDDED_ICON_B64.strip())
+            _tmp_dir = _os.environ.get("TEMP", _tf.gettempdir())
+            _ico_path = _os.path.join(_tmp_dir, "gfh_audit_icon.ico")
+            with open(_ico_path, "wb") as _f:
+                _f.write(_data)
+            self.iconbitmap(_ico_path)
         except Exception:
-            # taskbar icon on Windows.
-            try:
-                self._app_icon = tk.PhotoImage(data=GFH_SQUARE_ICON_B64)
-            except Exception:
-                self._app_icon = None
+            pass
         # Dynamic screen resolution support: size to 90% of the screen and
         # center it (DPI-aware), then stay a normal resizable top-level so
         # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
@@ -4794,6 +4803,10 @@ def _enable_dpi_awareness() -> None:
         return
     try:
         import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.App")
+        except Exception:
+            pass
         try:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)  # system DPI aware
         except Exception:
