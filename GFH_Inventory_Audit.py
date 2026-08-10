@@ -2154,9 +2154,16 @@ class GFHApp(tk.Tk):
         super().__init__()
         self.title(APP_NAME)
         self._app_icon = None
-        # NOTE: AppUserModelID is set in _enable_dpi_awareness() (called from
-        # main() BEFORE this Tk window is created). Setting it here would be
-        # too late — Windows has already grouped the taskbar button.
+        # Set AppUserModelID AGAIN after Tk creation (before window is shown).
+        # This must be set both BEFORE Tk (in _enable_dpi_awareness) and AFTER
+        # Tk creation but BEFORE the window is realized — Windows needs both
+        # for the taskbar to show the correct icon.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "GFHTelecom.InventoryAudit")
+        except Exception:
+            pass
         # Set the window icon BEFORE _apply_dynamic_geometry() — that method
         # calls update_idletasks() which realizes the window, and the icon
         # must be set before realization or the taskbar/titlebar icon is lost.
