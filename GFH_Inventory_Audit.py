@@ -2162,8 +2162,7 @@ class GFHApp(tk.Tk):
         # shows our icon instead of the generic Python/PyInstaller icon
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "GFHTelecom.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.InventoryAudit")
         except Exception:
             pass
         # Try _MEIPASS first (PyInstaller onefile extraction dir)
@@ -4806,7 +4805,7 @@ def _enable_dpi_awareness() -> None:
     try:
         import ctypes
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.InventoryAudit")
         except Exception:
             pass
         try:
