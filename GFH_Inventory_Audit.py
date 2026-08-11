@@ -2158,13 +2158,6 @@ class GFHApp(tk.Tk):
         # center it (DPI-aware), then stay a normal resizable top-level so
         # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
         self._apply_dynamic_geometry()
-        # Brute-force taskbar icon: set AppUserModelID so Windows taskbar
-        # shows our icon instead of the generic Python/PyInstaller icon
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.InventoryAudit")
-        except Exception:
-            pass
         # Try _MEIPASS first (PyInstaller onefile extraction dir)
         import sys as _sys, os as _os
         _meipass = getattr(_sys, "_MEIPASS", None)
@@ -4804,10 +4797,6 @@ def _enable_dpi_awareness() -> None:
         return
     try:
         import ctypes
-        try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.InventoryAudit")
-        except Exception:
-            pass
         try:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)  # system DPI aware
         except Exception:
