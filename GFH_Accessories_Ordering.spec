@@ -15,6 +15,7 @@ a = Analysis(
     pathex=['.'],
     binaries=[],
     datas=[
+        ('assets', 'assets'),
         ('header_logo.png', '.'),
         ('stores.json', '.'),
         ('theme_manager.py', '.'),
