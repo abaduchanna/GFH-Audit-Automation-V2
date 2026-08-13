@@ -2338,10 +2338,10 @@ class GFHApp(tk.Tk):
             pass
 
         self.COLOR_NAVY = "#090d26"   # matches theme_manager.py navy — header blends with logo
-        self.COLOR_RED = "#E91B2F"
+        self.COLOR_RED = "#f0541c"
         self.COLOR_BG = "#F3F5FA"
         self.COLOR_CARD = "#FFFFFF"
-        self.COLOR_TEXT = "#12142B"
+        self.COLOR_TEXT = "#090d26"
         self.COLOR_MUTED = "#5F6678"
         self.COLOR_BORDER = "#D9DEEA"
         self.COLOR_SUCCESS = "#17A65B"
@@ -2349,13 +2349,13 @@ class GFHApp(tk.Tk):
         self.configure(bg=self.COLOR_BG)
         self._apply_styles()
 
-        # ── Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.Frame(self, bg="#12142B", height=24)
+        # ── Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.Frame(self, bg="#090d26", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
         tk.Label(
             _cbar,
             text=f"Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.",
-            font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B",
+            font=("Segoe UI", 8), fg="#9d9db8", bg="#090d26",
         ).pack(side="left", padx=14, pady=3)
 
 
