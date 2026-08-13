@@ -2354,7 +2354,7 @@ class GFHApp(tk.Tk):
         _cbar.pack_propagate(False)
         tk.Label(
             _cbar,
-            text=f"Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.date.today().year}  |  Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.",
+            text=f"Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.",
             font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B",
         ).pack(side="left", padx=14, pady=3)
 
