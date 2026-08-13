@@ -1,4 +1,4 @@
-# Developed by Abad Umair Channa  |  Copyright (c) 2026. All rights reserved.
+# Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved. Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.
 #!/usr/bin/env python3
 """
 GFH Telecom LLC Accessories Ordering Automation - GUI FINAL
@@ -1461,13 +1461,13 @@ class GFHAccessoriesAutomationGUI:
         set_log_callback(self.enqueue_log)
         set_progress_callback(self.enqueue_progress)
 
-        # ── Copyright bar — packed FIRST so it is ALWAYS visible. If packed
+        # ── Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved. If packed
         # after the expanding body (fill=BOTH, expand=True), the body consumes
         # the whole pack cavity and squeezes this bar to zero height. ────────
         _cbar = tk.Frame(self.root, bg="#12142B", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
-        tk.Label(_cbar, text=f"Developed by Abad Umair Channa  |  Copyright © {get_copyright_year()}  |  All rights reserved.",
+        tk.Label(_cbar, text=f"Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.",
                  font=("Segoe UI", 8), fg="#8aaccc", bg="#12142B").pack(side="left", padx=14, pady=3)
 
         self.build_style()
