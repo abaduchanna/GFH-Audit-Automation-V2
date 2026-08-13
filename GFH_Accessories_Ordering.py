@@ -1,4 +1,4 @@
-# Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved. Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.
+# Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved. Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.
 #!/usr/bin/env python3
 """
 GFH Telecom LLC Accessories Ordering Automation - GUI FINAL
@@ -1461,13 +1461,13 @@ class GFHAccessoriesAutomationGUI:
         set_log_callback(self.enqueue_log)
         set_progress_callback(self.enqueue_progress)
 
-        # ── Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved. If packed
+        # ── Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved. If packed
         # after the expanding body (fill=BOTH, expand=True), the body consumes
         # the whole pack cavity and squeezes this bar to zero height. ────────
         _cbar = tk.Frame(self.root, bg="#090d26", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
-        tk.Label(_cbar, text=f"Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.",
+        tk.Label(_cbar, text=f"Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.",
                  font=("Segoe UI", 8), fg="#9d9db8", bg="#090d26").pack(side="left", padx=14, pady=3)
 
         self.build_style()
@@ -1560,7 +1560,7 @@ class GFHAccessoriesAutomationGUI:
         import sys as _sys, os as _os
         _meipass = getattr(_sys, "_MEIPASS", None)
         if _meipass:
-            for _ico_name in ("gfh_icon_white.ico", "gfh_telecom_llc_icon.ico", "icon.ico"):
+            for _ico_name in ("gfh_icon.ico", "gfh_telecom_llc_icon.ico", "gfh_icon.ico"):
                 _ico_path = _os.path.join(_meipass, _ico_name)
                 if _os.path.exists(_ico_path):
                     try:
