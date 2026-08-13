@@ -12,11 +12,14 @@ block_cipher = None
 
 a = Analysis(
     ['GFH_Inventory_Audit.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=[],
     datas=[
         ('gfh_app_icon_new.ico', '.'),
+        ('gfh_icon_white.ico', '.'),
         ('header_logo.png', '.'),
+        ('stores.json', '.'),
+        ('theme_manager.py', '.'),
     ],
     hiddenimports=[
         'tkinter',
