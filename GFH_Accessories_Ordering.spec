@@ -89,5 +89,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='gfh_icon_white.ico',
+    icon='gfh_icon.ico',
 )
