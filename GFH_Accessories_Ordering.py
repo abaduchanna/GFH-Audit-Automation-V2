@@ -35,6 +35,8 @@ from selenium.webdriver.edge.service import Service
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 import tkinter as tk
 from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
+from header_manager import FixedHeaderManager
+from logo_handler import LogoHandler
 from tkinter import ttk, filedialog, messagebox, simpledialog
 from tkinter.scrolledtext import ScrolledText
 
@@ -402,6 +404,7 @@ class CPWHOrderAutomator:
     # -----------------------------------------------------------------
     # Helper methods
     # -----------------------------------------------------------------
+        self.header_mgr = FixedHeaderManager(self.root, title="GFH Accessories Ordering")
     def handle_alerts(self, wait_time=0.5):
         try:
             WebDriverWait(self.driver, wait_time).until(EC.alert_is_present())
