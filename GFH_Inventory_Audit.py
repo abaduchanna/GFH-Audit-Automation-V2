@@ -1,3 +1,4 @@
+from datetime import date
 from header_manager import FixedHeaderManager
 from logo_handler import LogoHandler
 
