@@ -33,7 +33,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
-import tkinter as tk
+try:
+    import tkinter as tk
+except ImportError:
+    import sys
+    print("ERROR: tkinter not available. Install Python from python.org (not Microsoft Store).")
+    sys.exit(1)
 from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
 from header_manager import FixedHeaderManager
 from logo_handler import LogoHandler
