@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from datetime import date
 from header_manager import FixedHeaderManager
 from logo_handler import LogoHandler
 
-# Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved. Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.
+# Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.
 """
 GFH Telecom LLC Inventory Audit v27
 
@@ -41,8 +43,6 @@ WhatsApp Desktop notes:
   change SEARCH_SHORTCUT below to "ctrl+k".
 - District group routing uses the WhatsApp group names saved in the District DMs tab.
 """
-
-from __future__ import annotations
 
 # ── Auto-install any missing pip packages ───────────────────────────────────
 def _auto_install_packages() -> None:
