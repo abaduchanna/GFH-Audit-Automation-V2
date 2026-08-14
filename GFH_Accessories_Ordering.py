@@ -1480,7 +1480,7 @@ class GFHAccessoriesAutomationGUI:
 
         self.build_style()
         self.load_logo_source()
-        self.theme_manager = ThemeManager("GFH Accessories Ordering")
+        self.theme_manager = ThemeManager("GFH Accessories Ordering", app_name="vidapay-gfh")
         self.build_ui()
 
         load_stores()  # Load stores safely before refreshing the list
