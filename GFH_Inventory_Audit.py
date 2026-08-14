@@ -1,3 +1,6 @@
+from header_manager import FixedHeaderManager
+from logo_handler import LogoHandler
+
 # Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved. Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.
 """
 GFH Telecom LLC Inventory Audit v27
@@ -2327,6 +2330,7 @@ class GFHApp(tk.Tk):
         self.update_idletasks()
 
     def _build_ui(self) -> None:
+        self.header_mgr = FixedHeaderManager(self, title="GFH Inventory Audit")
         self._style = ttk.Style(self)
         try:
             self._style.theme_use("clam")
