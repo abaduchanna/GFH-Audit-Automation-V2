@@ -71,7 +71,7 @@ def _auto_install_packages() -> None:
     # Show a quick tk splash so the user knows something is happening
     try:
         import tkinter as _tk
-        from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
+        from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
         _splash = _tk.Tk()
         _splash.title("GFH Inventory Audit — Installing packages…")
         _splash.geometry("540x90")
@@ -110,7 +110,7 @@ def _auto_install_packages() -> None:
     if not success:
         try:
             import tkinter as _tk2
-            from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
+            from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
             import tkinter.messagebox as _mb
             _r2 = _tk2.Tk(); _r2.withdraw()
             _mb.showerror(
@@ -152,7 +152,7 @@ import xml.etree.ElementTree as ET
 
 try:
     import tkinter as tk
-    from theme_manager import ThemeManager, apply_theme_to_window, create_theme_toggle_button, get_copyright_year
+    from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
     from tkinter import filedialog, messagebox, ttk, simpledialog
 except Exception as exc:
     raise RuntimeError("Tkinter is required. Use the standard Windows Python installer.") from exc
