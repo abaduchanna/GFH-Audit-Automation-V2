@@ -2254,7 +2254,7 @@ class GFHApp(tk.Tk):
         self.status_checked_keys: set[str] = set()
         self.audit_checked_keys: set[str] = set()
 
-        self.theme_manager = ThemeManager("GFH Inventory Audit")
+        self.theme_manager = ThemeManager("GFH Inventory Audit", app_name="vidapay-gfh")
         self._build_ui()
         self.set_status(f"Ready. Data folder: {APP_DIR}")
         self._start_db_sync_poll()
