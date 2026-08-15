@@ -2448,7 +2448,7 @@ class GFHApp(tk.Tk):
         """Apply theme colors to all widgets."""
         if colors is None:
             colors = self.theme_manager.get_colors()
-        apply_theme_to_window(self.root, self.theme_manager)
+        # apply_theme_to_window removed — _walk handles all styling
         try:
             self.root.configure(bg=colors.get("bg", "#f6f7fb"))
         except Exception:
