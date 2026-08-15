@@ -1620,23 +1620,8 @@ class GFHAccessoriesAutomationGUI:
             return None
 
     def build_ui(self):
-        self.header = tk.Frame(self.root, bg=NAVY, height=92)
-        self.header._tag = "header"
-        self.header.pack(side=tk.TOP, fill=tk.X)
-        self.header.pack_propagate(False)
+        # Header created by FixedHeaderManager in _header method
 
-        self.logo_label = tk.Label(self.header, bg=NAVY)
-        self.logo_label.pack(side=tk.LEFT, padx=(22, 14))
-        self.logo_photo = self.resized_logo(260, 70)
-        if self.logo_photo:
-            self.logo_label.configure(image=self.logo_photo)
-        else:
-            self.logo_label.configure(text="GFH TELECOM", fg=WHITE, bg=NAVY, font=("Segoe UI", 20, "bold"))
-
-        separator = tk.Frame(self.header, bg="#697089", width=1, height=54)
-        separator.pack(side=tk.LEFT, padx=(0, 18))
-        tk.Label(self.header, text=APP_TITLE, bg=NAVY, fg=WHITE, font=("Segoe UI", 21, "bold")).pack(side=tk.LEFT)
-        self.header.bind("<Configure>", self.on_header_resize)
 
         body = tk.Frame(self.root, bg=APP_BG)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
