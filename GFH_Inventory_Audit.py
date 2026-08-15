@@ -2332,6 +2332,7 @@ class GFHApp(tk.Tk):
 
     def _build_ui(self) -> None:
         self.header_mgr = FixedHeaderManager(self, title="GFH Inventory Audit")
+        self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
         self._style = ttk.Style(self)
         try:
             self._style.theme_use("clam")
