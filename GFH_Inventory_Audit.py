@@ -2334,12 +2334,8 @@ class GFHApp(tk.Tk):
     def _build_ui(self) -> None:
         self.header_mgr = FixedHeaderManager(self, title="GFH Inventory Audit")
         self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
-        if hasattr(self.header_mgr, "header_frame"):
-            self.header_mgr.header_frame._tag = "header"
-            for child in self.header_mgr.header_frame.winfo_children():
-                child._tag = "header"
-                for grandchild in child.winfo_children():
-                    grandchild._tag = "header_label"
+        # FixedHeaderManager now tags ALL its own widgets with _tag="header"
+        # in __init__/add_theme_toggle/add_copyright, so no manual tagging needed.
         try:
             _lp = _resource_path("GFH_Telecom_Logo.png") if "_resource_path" in dir() else os.path.join(os.path.dirname(os.path.abspath(__file__)), "GFH_Telecom_Logo.png")
             if os.path.exists(_lp):
@@ -2445,14 +2441,19 @@ class GFHApp(tk.Tk):
         theme_btn.pack(side="right")
 
     def _apply_theme(self, colors=None):
-        """Apply theme colors to all widgets."""
+        """Apply theme colors to all widgets.
+
+        GFHApp inherits from tk.Tk, so `self` IS the root window.
+        Previous code used self.root which doesn't exist → AttributeError
+        → theme toggle silently did nothing.
+        """
         if colors is None:
             colors = self.theme_manager.get_colors()
-        apply_theme_to_window(self.root, self.theme_manager)
-        try:
-            self.root.configure(bg=colors.get("bg", "#f6f7fb"))
-        except Exception:
-            pass
+        # Pass `self` (the tk.Tk root), not self.root (which doesn't exist)
+        self.theme_manager.apply_theme_to_window(self)
+        # Refresh header toggle button text in case theme changed
+        if hasattr(self.header_mgr, 'update_button_text'):
+            self.header_mgr.update_button_text()
     def _build_status_tab(self) -> None:
         controls = ttk.LabelFrame(self.status_tab, text="Send Inventory Audit Status", padding=10)
         controls.pack(fill="x", pady=(0, 5))
