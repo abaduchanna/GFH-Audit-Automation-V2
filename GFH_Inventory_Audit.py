@@ -2333,6 +2333,7 @@ class GFHApp(tk.Tk):
 
     def _build_ui(self) -> None:
         self.header_mgr = FixedHeaderManager(self, title="GFH Inventory Audit")
+        self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
         if hasattr(self.header_mgr, "header_frame"):
             self.header_mgr.header_frame._tag = "header"
             for child in self.header_mgr.header_frame.winfo_children():
@@ -2345,7 +2346,6 @@ class GFHApp(tk.Tk):
                 self.header_mgr.set_logo(logo_path=_lp, text="GFH")
         except Exception:
             pass
-        self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
         self._style = ttk.Style(self)
         try:
             self._style.theme_use("clam")
