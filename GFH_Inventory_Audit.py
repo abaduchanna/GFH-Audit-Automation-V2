@@ -149,6 +149,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 import xml.etree.ElementTree as ET
+import base64
 
 try:
     import tkinter as tk
