@@ -1635,8 +1635,7 @@ class GFHAccessoriesAutomationGUI:
         self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=16, pady=16)
         self.build_dashboard()
 
-        theme_btn = self.theme_manager.create_theme_toggle_button(self.header_mgr.header_frame, callback=self._apply_theme)
-        theme_btn.pack(side=tk.RIGHT, padx=16)
+        # Theme toggle handled by FixedHeaderManager.add_theme_toggle above
 
     def _apply_theme(self, colors=None):
         """Apply theme colors to all widgets."""
