@@ -1566,9 +1566,9 @@ class GFHAccessoriesAutomationGUI:
         if getattr(sys, "frozen", False):
             _meipass = getattr(sys, "_MEIPASS", None)
             if _meipass:
-                _candidates.append(os.path.join(_meipass, "header_logo.png"))
-            _candidates.append(os.path.join(os.path.dirname(sys.executable), "header_logo.png"))
-        _candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "header_logo.png"))
+                _candidates.append(os.path.join(_meipass, "GFH_Telecom_Logo.png"))
+            _candidates.append(os.path.join(os.path.dirname(sys.executable), "GFH_Telecom_Logo.png"))
+        _candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "GFH_Telecom_Logo.png"))
         self.logo_source = next((p for p in _candidates if os.path.exists(p)), None)
         # Windows needs an AppUserModelID or the taskbar can show a
         # blank/generic icon even when the titlebar icon is set.
