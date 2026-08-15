@@ -13,6 +13,7 @@ GFH Telecom LLC Accessories Ordering Automation - GUI FINAL
 - Added reliable mouse scrolling in the Store Selection list.
 """
 
+from datetime import date
 import time
 from datetime import datetime
 import os
