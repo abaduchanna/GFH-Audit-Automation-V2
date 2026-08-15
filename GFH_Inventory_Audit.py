@@ -233,7 +233,7 @@ def _resource_path(name: str) -> Path:
     return PACKAGE_DIR / name
 
 
-HEADER_LOGO_PATH = _resource_path("header_logo.png")
+HEADER_LOGO_PATH = _resource_path("GFH_Telecom_Logo.png")
 STATUS_LOGO_PATH = PACKAGE_DIR / "gfh_telecom_llc_logo.png"
 APP_ICON_PATH = PACKAGE_DIR / "gfh_telecom_llc_icon.ico"
 APP_ICON_PNG_PATH = PACKAGE_DIR / "gfh_telecom_llc_logo.png"
