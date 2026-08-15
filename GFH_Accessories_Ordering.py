@@ -410,6 +410,12 @@ class CPWHOrderAutomator:
     # Helper methods
     # -----------------------------------------------------------------
         self.header_mgr = FixedHeaderManager(self.root, title="GFH Accessories Ordering")
+        try:
+            _lp = _resource_path("GFH_Telecom_Logo.png") if "_resource_path" in dir() else os.path.join(os.path.dirname(os.path.abspath(__file__)), "GFH_Telecom_Logo.png")
+            if os.path.exists(_lp):
+                self.header_mgr.set_logo(logo_path=_lp, text="GFH")
+        except Exception:
+            pass
         self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
     def handle_alerts(self, wait_time=0.5):
         try:
@@ -1641,8 +1647,14 @@ class GFHAccessoriesAutomationGUI:
         theme_btn.pack(side=tk.RIGHT, padx=16)
 
     def _apply_theme(self, colors=None):
+        """Apply theme colors to all widgets."""
+        if colors is None:
+            colors = self.theme_manager.get_colors()
         apply_theme_to_window(self.root, self.theme_manager)
-
+        try:
+            self.root.configure(bg=colors.get("bg", "#f6f7fb"))
+        except Exception:
+            pass
     def on_header_resize(self, event):
         height = max(46, min(72, event.height - 20))
         max_width = 280 if event.width >= 1200 else 220
