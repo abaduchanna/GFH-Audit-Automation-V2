@@ -1509,7 +1509,7 @@ class GFHAccessoriesAutomationGUI:
 
         self.root.after(120, self.process_queues)
 
-        # apply_theme_to_window removed — _walk handles all styling
+        apply_theme_to_window(self.root, self.theme_manager)
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -1642,7 +1642,7 @@ class GFHAccessoriesAutomationGUI:
         """Apply theme colors to all widgets."""
         if colors is None:
             colors = self.theme_manager.get_colors()
-        # apply_theme_to_window removed — _walk handles all styling
+        apply_theme_to_window(self.root, self.theme_manager)
         try:
             self.root.configure(bg=colors.get("bg", "#f6f7fb"))
         except Exception:
