@@ -2332,6 +2332,12 @@ class GFHApp(tk.Tk):
 
     def _build_ui(self) -> None:
         self.header_mgr = FixedHeaderManager(self, title="GFH Inventory Audit")
+        try:
+            _lp = _resource_path("GFH_Telecom_Logo.png") if "_resource_path" in dir() else os.path.join(os.path.dirname(os.path.abspath(__file__)), "GFH_Telecom_Logo.png")
+            if os.path.exists(_lp):
+                self.header_mgr.set_logo(logo_path=_lp, text="GFH")
+        except Exception:
+            pass
         self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
         self._style = ttk.Style(self)
         try:
@@ -2432,8 +2438,14 @@ class GFHApp(tk.Tk):
         theme_btn.pack(side="right")
 
     def _apply_theme(self, colors=None):
-        apply_theme_to_window(self, self.theme_manager)
-
+        """Apply theme colors to all widgets."""
+        if colors is None:
+            colors = self.theme_manager.get_colors()
+        apply_theme_to_window(self.root, self.theme_manager)
+        try:
+            self.root.configure(bg=colors.get("bg", "#f6f7fb"))
+        except Exception:
+            pass
     def _build_status_tab(self) -> None:
         controls = ttk.LabelFrame(self.status_tab, text="Send Inventory Audit Status", padding=10)
         controls.pack(fill="x", pady=(0, 5))
