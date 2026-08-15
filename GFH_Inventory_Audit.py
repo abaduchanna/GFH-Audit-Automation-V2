@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import date
 from header_manager import FixedHeaderManager
 from logo_handler import LogoHandler
@@ -137,7 +138,6 @@ import shutil
 import sqlite3
 import struct
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -2360,7 +2360,8 @@ class GFHApp(tk.Tk):
         self.configure(bg=self.COLOR_BG)
         self._apply_styles()
 
-        # ── Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.Frame(self, bg="#090d26", height=24)
+        # ── Copyright bar (bottom) ──
+        _cbar = tk.Frame(self, bg="#090d26", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
         tk.Label(
