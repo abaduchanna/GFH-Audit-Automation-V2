@@ -25,7 +25,6 @@ a = Analysis(
     hiddenimports=[
         'tkinter',
         '_tkinter',
-        'tkinter._fix',
         'selenium',
         'selenium.webdriver',
         'selenium.webdriver.chrome',
@@ -56,9 +55,6 @@ a = Analysis(
         'logo_handler',
         'PIL',
         'pandas',
-        'gspread',
-        'oauth2client',
-        'pywin32',
     ],
     hookspath=[],
     hooksconfig={},
