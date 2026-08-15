@@ -410,6 +410,7 @@ class CPWHOrderAutomator:
     # Helper methods
     # -----------------------------------------------------------------
         self.header_mgr = FixedHeaderManager(self.root, title="GFH Accessories Ordering")
+        self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
     def handle_alerts(self, wait_time=0.5):
         try:
             WebDriverWait(self.driver, wait_time).until(EC.alert_is_present())
