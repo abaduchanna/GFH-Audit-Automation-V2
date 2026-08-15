@@ -412,12 +412,8 @@ class CPWHOrderAutomator:
     # -----------------------------------------------------------------
         self.header_mgr = FixedHeaderManager(self.root, title="GFH Accessories Ordering")
         self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
-        if hasattr(self.header_mgr, "header_frame"):
-            self.header_mgr.header_frame._tag = "header"
-            for child in self.header_mgr.header_frame.winfo_children():
-                child._tag = "header"
-                for grandchild in child.winfo_children():
-                    grandchild._tag = "header_label"
+        # FixedHeaderManager now tags ALL its own widgets with _tag="header"
+        # in __init__/add_theme_toggle/add_copyright, so no manual tagging needed.
         try:
             _lp = _resource_path("GFH_Telecom_Logo.png") if "_resource_path" in dir() else os.path.join(os.path.dirname(os.path.abspath(__file__)), "GFH_Telecom_Logo.png")
             if os.path.exists(_lp):
@@ -1638,14 +1634,18 @@ class GFHAccessoriesAutomationGUI:
         # Theme toggle handled by FixedHeaderManager.add_theme_toggle above
 
     def _apply_theme(self, colors=None):
-        """Apply theme colors to all widgets."""
+        """Apply theme colors to all widgets.
+
+        Single source of truth: delegate to theme_manager.apply_theme_to_window(),
+        which walks the tree, skips any widget with _tag in PROTECTED_TAGS,
+        and handles Frame/Labelframe/Label/Button/Entry/Text/etc.
+        """
         if colors is None:
             colors = self.theme_manager.get_colors()
-        apply_theme_to_window(self.root, self.theme_manager)
-        try:
-            self.root.configure(bg=colors.get("bg", "#f6f7fb"))
-        except Exception:
-            pass
+        self.theme_manager.apply_theme_to_window(self.root)
+        # Refresh header toggle button text in case theme changed
+        if hasattr(self.header_mgr, 'update_button_text'):
+            self.header_mgr.update_button_text()
     def on_header_resize(self, event):
         height = max(46, min(72, event.height - 20))
         max_width = 280 if event.width >= 1200 else 220
