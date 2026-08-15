@@ -1643,7 +1643,7 @@ class GFHAccessoriesAutomationGUI:
         self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=16, pady=16)
         self.build_dashboard()
 
-        theme_btn = create_theme_toggle_button(self.header, self.theme_manager, on_toggle=self._apply_theme)
+        theme_btn = self.theme_manager.create_theme_toggle_button(self.header, on_toggle=self._apply_theme)
         theme_btn.pack(side=tk.RIGHT, padx=16)
 
     def _apply_theme(self, colors=None):
