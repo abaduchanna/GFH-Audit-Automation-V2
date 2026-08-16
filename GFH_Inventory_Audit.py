@@ -2327,8 +2327,8 @@ class GFHApp(tk.Tk):
             foreground=[("pressed", "#FFFFFF"), ("active", "#FFFFFF")],
             bordercolor=[("active", self.COLOR_RED), ("pressed", self.COLOR_RED)],
         )
-        s.configure("TEntry", fieldbackground="#FFFFFF", foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
-        s.configure("TCombobox", fieldbackground="#FFFFFF", foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
+        s.configure("TEntry", fieldbackground=self.COLOR_INPUT, foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
+        s.configure("TCombobox", fieldbackground=self.COLOR_INPUT, foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
         s.configure("TLabelframe", background=self.COLOR_BG, bordercolor=self.COLOR_BORDER, relief="solid")
         s.configure("TLabelframe.Label", background=self.COLOR_BG, foreground=self.COLOR_NAVY, font=("Segoe UI", sz(10), "bold"))
         s.configure("TNotebook", background=self.COLOR_BG, borderwidth=0)
@@ -2338,7 +2338,7 @@ class GFHApp(tk.Tk):
             background=[("selected", self.COLOR_RED), ("active", "#FFE8EC")],
             foreground=[("selected", "#FFFFFF"), ("active", self.COLOR_NAVY)],
         )
-        s.configure("Treeview", rowheight=max(20, round(32 * self.zoom_scale)), font=("Segoe UI", sz(10)), background="#FFFFFF", fieldbackground="#FFFFFF", foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER, borderwidth=1)
+        s.configure("Treeview", rowheight=max(20, round(32 * self.zoom_scale)), font=("Segoe UI", sz(10)), background=self.COLOR_CARD, fieldbackground=self.COLOR_CARD, foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER, borderwidth=1)
         s.configure("Treeview.Heading", font=("Segoe UI", sz(10), "bold"), background=self.COLOR_NAVY, foreground="#FFFFFF", relief="flat")
         # Without an explicit "active" (hover) map, ttk's built-in "clam" theme
         # falls back to its own default light-gray hover color for the heading,
@@ -2379,6 +2379,7 @@ class GFHApp(tk.Tk):
         self.COLOR_TEXT = "#090d26"
         self.COLOR_MUTED = "#5F6678"
         self.COLOR_BORDER = "#D9DEEA"
+        self.COLOR_INPUT = "#FFFFFF"
         self.COLOR_SUCCESS = "#17A65B"
 
         self.configure(bg=self.COLOR_BG)
@@ -2490,6 +2491,7 @@ class GFHApp(tk.Tk):
         self.COLOR_TEXT = colors["text"]
         self.COLOR_MUTED = colors["text_dim"]
         self.COLOR_BORDER = colors["border"]
+        self.COLOR_INPUT = colors.get("input", colors["panel"])
         # COLOR_NAVY / COLOR_RED are brand-fixed and intentionally stay the same
         # in both themes so buttons/tabs/headers keep matching the sun/moon toggle.
 
@@ -2497,6 +2499,16 @@ class GFHApp(tk.Tk):
         # with theme-specific panel colors. Re-assert the brand button/tab styling right after
         # so every button and the selected tab keeps matching the red sun/moon toggle button.
         self._apply_styles()
+
+        # The "status_completed" (default/no-status) row tag was set once at
+        # startup using whatever COLOR_CARD was then — re-apply it now so
+        # already-populated rows update to the new theme's background instead
+        # of staying stuck white after a toggle.
+        if hasattr(self, "status_tree"):
+            try:
+                self.status_tree.tag_configure("status_completed", background=self.COLOR_CARD)
+            except Exception:
+                pass
     def _build_status_tab(self) -> None:
         controls = ttk.LabelFrame(self.status_tab, text="Send Inventory Audit Status", padding=10)
         controls.pack(fill="x", pady=(0, 5))
@@ -2552,7 +2564,11 @@ class GFHApp(tk.Tk):
         self.status_tree.tag_configure("status_pending", background="#FFF3CD")
         self.status_tree.tag_configure("status_completed_after_update", background="#D7ECFF")
         self.status_tree.tag_configure("status_completed_sent", background="#D9F7DF")
-        self.status_tree.tag_configure("status_completed", background="#FFFFFF")
+        # "status_completed" (no special status yet) is meant to look like a normal,
+        # un-highlighted row — it should track the current theme's card/list
+        # background, not stay hardcoded white. It's re-applied in _apply_theme()
+        # too, so it stays correct after a theme toggle rather than only at startup.
+        self.status_tree.tag_configure("status_completed", background=self.COLOR_CARD)
         ttk.Label(
             self.status_tab,
             text="Colors: Yellow = Pending, Blue = Completed after updated sheet load, Green = Completed and sent to WhatsApp.",
