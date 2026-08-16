@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 from datetime import date
-from header_manager import FixedHeaderManager
 from logo_handler import LogoHandler
 
 # Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.
@@ -11,23 +10,23 @@ GFH Telecom LLC Inventory Audit v27
 
 What this app does
 1. Upload Inventory_Count_Result_Details.xlsx.
-2. Upload Employee_Time_Sheet.xlsx.
-3. Rebuilds the GFH Inventory Status / Inventory Count Results workflow:
+2. Rebuilds the GFH Inventory Status / Inventory Count Results workflow:
    - Reads serial-level inventory count results.
    - Filters Inventory_Count_Result_Details to the latest Created Date/Time per Store + Created By.
    - Deduplicates by (Store, IMEI) keeping the latest record.
    - Treats non-matched serialized rows as variances.
-   - Pulls District and Rep Name from Employee_Time_Sheet by Store.
+   - Pulls District from the saved Store List. Rep/employee name comes straight from the
+     "Created By" column in Inventory_Count_Result_Details (no separate time sheet file).
    - Merges Arizona - D1, Arizona - D2, and Arizona into Arizona.
    - Skips SIM, eSIM, SIM Card, SIM Kit, and similar SIM products from UI and sending.
-4. Shows variances in a GUI with District, Store, Product, IMEI, Status, Rep Name, and Checkbox.
-5. Checkbox marks the variance as cleared/resolved. Cleared rows are skipped in pending auto-send.
-6. Sends selected or pending variances as PNG images to WhatsApp Desktop.
-7. Send mode options:
+3. Shows variances in a GUI with District, Store, Product, IMEI, Status, Rep Name, and Checkbox.
+4. Checkbox marks the variance as cleared/resolved. Cleared rows are skipped in pending auto-send.
+5. Sends selected or pending variances as PNG images to WhatsApp Desktop.
+6. Send mode options:
    - District: one image batch per district.
    - Store: one image batch per store, routed to that store's district WhatsApp group.
    - Sales Rep: one image batch per sales rep per district, routed to that district WhatsApp group.
-8. Opens with a blank UI and loads data only after both file paths are provided and Load Variances is clicked.
+7. Opens with a blank UI and loads data only after the file path is provided and Load Variances is clicked.
 9. Keeps a SQLite log of cleared, pending, and sent variance status.
 
 Recommended install on Windows:
@@ -755,48 +754,64 @@ def read_xlsx_records(path: str | Path) -> List[Dict[str, str]]:
     return reader.read_sheet()
 
 
-def build_store_maps(time_sheet_records: List[Dict[str, str]]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+def build_store_maps(master_store_records: Optional[List[Dict[str, str]]] = None) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """District and display-name lookups, sourced from the saved Store List (master records).
+
+    Employee/rep names are no longer sourced from a separate time sheet file — they come
+    directly from the "Created By" column in Inventory_Count_Result_Details instead.
+    """
     district_by_store: Dict[str, str] = {}
     display_by_store: Dict[str, str] = {}
-    rep_by_store: Dict[str, str] = {}
-    latest_clock_by_store: Dict[str, float] = {}
 
-    if not time_sheet_records:
-        return district_by_store, display_by_store, rep_by_store
-
-    sample = time_sheet_records[0]
-    store_col = find_column(sample, ["Store"])
-    district_col = find_column(sample, ["District"])
-    rep_col = find_column(sample, ["Salesperson", "Sales Person", "Rep Name", "Employee", "Employee Name"])
-    clock_in_col = find_column(sample, ["Clock In", "Clock-In", "Date", "Work Date"])
-    user_login_col = find_column(sample, ["User Login", "Username", "Login"])
-
-    if not store_col:
-        return district_by_store, display_by_store, rep_by_store
-
-    for index, rec in enumerate(time_sheet_records):
-        store_raw = rec.get(store_col, "")
-        norm = normalize_store(store_raw)
+    for rec in master_store_records or []:
+        district = normalize_district(rec.get("District", ""))
+        store = display_store(rec.get("Store", ""))
+        norm = normalize_store(store)
         if not norm:
             continue
+        if district and district != "Unknown":
+            district_by_store[norm] = district
+        if store:
+            display_by_store[norm] = store
 
-        display_by_store[norm] = display_store(store_raw)
-        if district_col:
-            district = normalize_district(rec.get(district_col, ""))
-            if district and district != "Unknown":
-                district_by_store[norm] = district
+    return district_by_store, display_by_store
 
-        rep_name = safe_text(rec.get(rep_col, "")) if rep_col else ""
-        if not rep_name and user_login_col:
-            rep_name = safe_text(rec.get(user_login_col, ""))
 
-        date_score = numeric_excel_date(rec.get(clock_in_col, "")) if clock_in_col else float(index)
-        # Keep the latest available rep per store. This mirrors the latest-clock-in mapping used by the GFH status file.
-        if rep_name and date_score >= latest_clock_by_store.get(norm, -1.0):
-            rep_by_store[norm] = rep_name
-            latest_clock_by_store[norm] = date_score
+def build_rep_by_store_from_created_by(
+    inventory_records: List[Dict[str, str]],
+) -> Dict[str, str]:
+    """Latest "Created By" value per store from the Inventory_Count_Result_Details rows.
 
-    return district_by_store, display_by_store, rep_by_store
+    Replaces the old Employee_Time_Sheet-based rep lookup. Employee/rep name for a store is
+    simply whoever most recently counted that store, per the Created Date/Time column.
+    """
+    rep_by_store: Dict[str, str] = {}
+    latest_score_by_store: Dict[str, float] = {}
+    if not inventory_records:
+        return rep_by_store
+
+    sample = inventory_records[0]
+    store_col = find_column(sample, ["Store"])
+    created_by_col = find_column(sample, ["Created By", "Count By", "User Login"])
+    created_date_col = find_column(sample, ["Created Date", "Created Date/Time", "Date Time", "Date"])
+    if not store_col or not created_by_col:
+        return rep_by_store
+
+    for index, rec in enumerate(inventory_records):
+        norm = normalize_store(rec.get(store_col, ""))
+        if not norm:
+            continue
+        created_by = safe_text(rec.get(created_by_col, ""))
+        if not created_by:
+            continue
+        score = numeric_excel_date(rec.get(created_date_col, "")) if created_date_col else float(index)
+        if score < 0:
+            score = float(index) / 1000000.0
+        if score >= latest_score_by_store.get(norm, -1.0):
+            rep_by_store[norm] = created_by
+            latest_score_by_store[norm] = score
+
+    return rep_by_store
 
 
 def filter_latest_inventory_records(inventory_records: List[Dict[str, str]]) -> Tuple[List[Dict[str, str]], Dict[str, int]]:
@@ -851,24 +866,13 @@ def filter_latest_inventory_records(inventory_records: List[Dict[str, str]]) -> 
 
 def extract_variances(
     inventory_records: List[Dict[str, str]],
-    time_sheet_records: List[Dict[str, str]],
     master_store_records: Optional[List[Dict[str, str]]] = None,
     source_file: str = "",
 ) -> Tuple[List[VarianceRow], Dict[str, int]]:
     if not inventory_records:
         return [], {"completed": 0, "pending": 0, "stores_total": 0, "skipped_sims": 0, "raw_inventory_rows": 0, "latest_inventory_rows": 0, "stale_inventory_rows": 0, "latest_created_by_groups": 0}
 
-    district_by_store, display_by_store, rep_by_store = build_store_maps(time_sheet_records)
-    for rec in master_store_records or []:
-        district = normalize_district(rec.get("District", ""))
-        store = display_store(rec.get("Store", ""))
-        norm = normalize_store(store)
-        if not norm:
-            continue
-        if district and district != "Unknown":
-            district_by_store[norm] = district
-        if store and norm not in display_by_store:
-            display_by_store[norm] = store
+    district_by_store, display_by_store = build_store_maps(master_store_records)
     sample = inventory_records[0]
     store_col = find_column(sample, ["Store"])
     product_col = find_column(sample, ["Product Description", "Product"])
@@ -939,8 +943,10 @@ def extract_variances(
 
         norm_store = normalize_store(store)
         district = normalize_district(district_by_store.get(norm_store, "Unknown"))
-        rep_name = safe_text(rep_by_store.get(norm_store, ""))
         created_by = safe_text(rec.get(created_by_col, "")) if created_by_col else ""
+        # Rep/employee name now comes straight from the "Created By" column of the
+        # inventory count Excel — no more separate Employee_Time_Sheet lookup.
+        rep_name = created_by
         created_date = excel_serial_to_date_text(rec.get(created_date_col, "")) if created_date_col else ""
         document_status = safe_text(rec.get(document_status_col, "")) if document_status_col else ""
         key = variance_key(store, imei, product, status, created_by, created_date)
@@ -975,23 +981,13 @@ def extract_variances(
 
 def build_inventory_status_rows(
     inventory_records: List[Dict[str, str]],
-    time_sheet_records: List[Dict[str, str]],
     master_store_records: Optional[List[Dict[str, str]]] = None,
     source_file: str = "",
 ) -> Tuple[List[InventoryStatusRow], Dict[str, int]]:
-    district_by_store, display_by_store, rep_by_store = build_store_maps(time_sheet_records)
-    master_display_by_store: Dict[str, str] = {}
-    for rec in master_store_records or []:
-        district = normalize_district(rec.get("District", ""))
-        store = display_store(rec.get("Store", ""))
-        norm = normalize_store(store)
-        if not norm:
-            continue
-        if district and district != "Unknown":
-            district_by_store[norm] = district
-        if store:
-            display_by_store[norm] = store
-            master_display_by_store[norm] = store
+    district_by_store, display_by_store = build_store_maps(master_store_records)
+    master_display_by_store: Dict[str, str] = dict(display_by_store)
+    # Rep/employee name comes from the "Created By" column of the inventory count Excel.
+    rep_by_store = build_rep_by_store_from_created_by(inventory_records)
     inv_display_by_store: Dict[str, str] = {}
     completed_store_norms: set[str] = set()
 
@@ -2159,31 +2155,57 @@ class GFHApp(tk.Tk):
         # center it (DPI-aware), then stay a normal resizable top-level so
         # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
         self._apply_dynamic_geometry()
-        # Try _MEIPASS first (PyInstaller onefile extraction dir)
+        # Set the window/taskbar icon. Using iconbitmap(default=...) — rather than
+        # plain iconbitmap(...) — is what makes Windows apply the icon to BOTH the
+        # title bar AND the taskbar button; plain iconbitmap only reliably updates
+        # the title bar. Try _MEIPASS (PyInstaller onefile extraction dir) first,
+        # falling back to the embedded base64 icon ONLY if the first attempt didn't
+        # actually succeed — previously both ran unconditionally, so the fallback
+        # silently clobbered a perfectly good icon with a mismatched one.
         import sys as _sys, os as _os
+        _icon_set = False
         _meipass = getattr(_sys, "_MEIPASS", None)
         if _meipass:
-            for _ico_name in ("gfh_icon.ico", "gfh_telecom_llc_icon.ico", "gfh_icon.ico"):
+            for _ico_name in ("gfh_icon.ico", "gfh_telecom_llc_icon.ico"):
                 _ico_path = _os.path.join(_meipass, _ico_name)
                 if _os.path.exists(_ico_path):
                     try:
-                        self.iconbitmap(_ico_path)
-                        self.iconbitmap(_ico_path)
+                        self.iconbitmap(default=_ico_path)
+                        _icon_set = True
                     except Exception:
-                        pass
+                        _icon_set = False
                     break
-        # Fallback: decode EMBEDDED_ICON_B64 to %TEMP%
-        try:
-            import base64 as _b64, tempfile as _tf
-            _data = _b64.b64decode(EMBEDDED_ICON_B64.strip())
-            _tmp_dir = _os.environ.get("TEMP", _tf.gettempdir())
-            _ico_path = _os.path.join(_tmp_dir, "gfh_audit_icon.ico")
-            with open(_ico_path, "wb") as _f:
-                _f.write(_data)
-            self.iconbitmap(_ico_path)
-            self.iconbitmap(_ico_path)
-        except Exception:
-            pass
+        if not _icon_set:
+            # Also try running from source (not frozen): use the .ico shipped
+            # alongside the script directly, no need for the base64 fallback.
+            try:
+                _src_ico = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "gfh_icon.ico")
+                if _os.path.exists(_src_ico):
+                    self.iconbitmap(default=_src_ico)
+                    _icon_set = True
+            except Exception:
+                _icon_set = False
+        if not _icon_set:
+            # Last-resort fallback: decode EMBEDDED_ICON_B64 to %TEMP% and use that.
+            try:
+                import base64 as _b64, tempfile as _tf
+                _data = _b64.b64decode(EMBEDDED_ICON_B64.strip())
+                _tmp_dir = _os.environ.get("TEMP", _tf.gettempdir())
+                _ico_path = _os.path.join(_tmp_dir, "gfh_audit_icon.ico")
+                with open(_ico_path, "wb") as _f:
+                    _f.write(_data)
+                self.iconbitmap(default=_ico_path)
+                _icon_set = True
+            except Exception:
+                _icon_set = False
+        # Re-assert once after the window is mapped — on some Windows/DPI setups
+        # the taskbar button grabs its icon at map time and needs a second call
+        # once the window actually exists on screen.
+        if _icon_set:
+            try:
+                self.after(150, lambda: self.iconbitmap(default=_ico_path))
+            except Exception:
+                pass
         self.zoom_scale = 1.0
         APP_DIR.mkdir(parents=True, exist_ok=True)
         IMAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -2198,7 +2220,6 @@ class GFHApp(tk.Tk):
         self._db_sync_paused: bool = False   # paused while THIS instance is writing
         self.master_store_records = self.db.store_master_records()
         self.current_inventory_records: List[Dict[str, str]] = []
-        self.current_time_sheet_records: List[Dict[str, str]] = []
 
         self.store_district_var = tk.StringVar(value="")
         self.store_name_var = tk.StringVar(value="")
@@ -2219,8 +2240,7 @@ class GFHApp(tk.Tk):
         self.selected_exclusion_key_var = tk.StringVar(value="")
 
         self.inventory_path = tk.StringVar(value="")
-        self.time_sheet_path = tk.StringVar(value="")
-        self.status_text = tk.StringVar(value="Select both file locations, then click Load Variances. No data loaded yet.")
+        self.status_text = tk.StringVar(value="Select the Inventory_Count_Result_Details file, then click Load Variances. No data loaded yet.")
         self.summary_text = tk.StringVar(value="No data loaded")
         self.include_cleared = tk.BooleanVar(value=False)
         self.send_only_unsent = tk.BooleanVar(value=SEND_ONLY_UNSENT_BY_DEFAULT)
@@ -2260,6 +2280,9 @@ class GFHApp(tk.Tk):
         self.set_status(f"Ready. Data folder: {APP_DIR}")
         self._start_db_sync_poll()
         apply_theme_to_window(self, self.theme_manager)
+        # Re-assert brand button/tab styling (red, matching the sun/moon toggle) after
+        # the generic theme pass above.
+        self._apply_styles()
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -2295,11 +2318,13 @@ class GFHApp(tk.Tk):
         s.configure("Header.TLabel", font=("Segoe UI", sz(19), "bold"), background=self.COLOR_NAVY, foreground="#FFFFFF")
         s.configure("BrandSub.TLabel", font=("Segoe UI", sz(10), "bold"), background=self.COLOR_NAVY, foreground="#DCE2F2")
         s.configure("Sub.TLabel", font=("Segoe UI", sz(10)), background=self.COLOR_BG, foreground=self.COLOR_MUTED)
-        s.configure("TButton", padding=(10, 6), font=("Segoe UI", sz(9), "bold"), background="#FFFFFF", foreground=self.COLOR_NAVY, bordercolor=self.COLOR_BORDER, focusthickness=1, focuscolor=self.COLOR_RED)
+        # Buttons match the sun/moon theme-toggle button in the header: solid brand-red
+        # background with white bold text.
+        s.configure("TButton", padding=(10, 6), font=("Segoe UI", sz(9), "bold"), background=self.COLOR_RED, foreground="#FFFFFF", bordercolor=self.COLOR_RED, focusthickness=1, focuscolor=self.COLOR_RED)
         s.map(
             "TButton",
-            background=[("active", "#FFE8EC"), ("pressed", self.COLOR_RED)],
-            foreground=[("pressed", "#FFFFFF"), ("active", self.COLOR_NAVY)],
+            background=[("active", "#D8431A"), ("pressed", "#B8330F")],
+            foreground=[("pressed", "#FFFFFF"), ("active", "#FFFFFF")],
             bordercolor=[("active", self.COLOR_RED), ("pressed", self.COLOR_RED)],
         )
         s.configure("TEntry", fieldbackground="#FFFFFF", foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
@@ -2332,16 +2357,6 @@ class GFHApp(tk.Tk):
         self.update_idletasks()
 
     def _build_ui(self) -> None:
-        self.header_mgr = FixedHeaderManager(self, title="GFH Inventory Audit")
-        self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
-        # FixedHeaderManager now tags ALL its own widgets with _tag="header"
-        # in __init__/add_theme_toggle/add_copyright, so no manual tagging needed.
-        try:
-            _lp = _resource_path("GFH_Telecom_Logo.png") if "_resource_path" in dir() else os.path.join(os.path.dirname(os.path.abspath(__file__)), "GFH_Telecom_Logo.png")
-            if os.path.exists(_lp):
-                self.header_mgr.set_logo(logo_path=_lp, text="GFH")
-        except Exception:
-            pass
         self._style = ttk.Style(self)
         try:
             self._style.theme_use("clam")
@@ -2393,16 +2408,13 @@ class GFHApp(tk.Tk):
         title_wrap = ttk.Frame(header, style="Brand.TFrame")
         title_wrap.pack(side="left", fill="x", expand=True)
         ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel").pack(anchor="w")
-        ttk.Label(title_wrap, text="Inventory Status • Variance Audit • WhatsApp Dispatch", style="BrandSub.TLabel").pack(anchor="w", pady=(4, 0))
-        ttk.Label(title_wrap, textvariable=self.summary_text, style="BrandSub.TLabel").pack(anchor="w", pady=(8, 0))
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
         self._file_row(file_box, 0, "Inventory_Count_Result_Details", self.inventory_path, self.pick_inventory)
-        self._file_row(file_box, 1, "Employee_Time_Sheet", self.time_sheet_path, self.pick_time_sheet)
-        ttk.Button(file_box, text="Load Variances", command=self.load_variances).grid(row=0, column=3, rowspan=2, padx=(12, 0), sticky="ns")
+        ttk.Button(file_box, text="Load Variances", command=self.load_variances).grid(row=0, column=3, padx=(12, 0), sticky="ns")
         ttk.Button(file_box, text="−", width=3, command=self.zoom_out).grid(row=0, column=4, padx=(8, 2), sticky="ew")
-        ttk.Button(file_box, text="+", width=3, command=self.zoom_in).grid(row=1, column=4, padx=(8, 2), sticky="ew")
+        ttk.Button(file_box, text="+", width=3, command=self.zoom_in).grid(row=0, column=5, padx=(2, 0), sticky="ew")
         file_box.columnconfigure(1, weight=1)
         self.bind("<Control-equal>", self.zoom_in)
         self.bind("<Control-plus>", self.zoom_in)
@@ -2452,9 +2464,10 @@ class GFHApp(tk.Tk):
             colors = self.theme_manager.get_colors()
         # Pass `self` (the tk.Tk root), not self.root (which doesn't exist)
         self.theme_manager.apply_theme_to_window(self)
-        # Refresh header toggle button text in case theme changed
-        if hasattr(self.header_mgr, 'update_button_text'):
-            self.header_mgr.update_button_text()
+        # apply_theme_to_window() re-styles generic ttk widgets (TButton, TNotebook.Tab, etc.)
+        # with theme-specific panel colors. Re-assert the brand button/tab styling right after
+        # so every button and the selected tab keeps matching the red sun/moon toggle button.
+        self._apply_styles()
     def _build_status_tab(self) -> None:
         controls = ttk.LabelFrame(self.status_tab, text="Send Inventory Audit Status", padding=10)
         controls.pack(fill="x", pady=(0, 5))
@@ -2525,39 +2538,12 @@ class GFHApp(tk.Tk):
         self.status_tree.bind("<Button-1>", self.on_status_tree_click)
 
     def _build_audit_tab(self) -> None:
-        # ── Variance Audit Controls — one scrollable single line ──────────
-        # Every control sits in a single row inside a horizontal-scroll
-        # canvas, so nothing is ever cut off at small or snapped window
-        # sizes: scroll, trackpad drag or Shift+wheel to reach the rest.
-        toolbar_host = tk.Frame(self.audit_tab)
-        toolbar_host.pack(fill="x", pady=(0, 5))
-        toolbar_canvas = tk.Canvas(toolbar_host, highlightthickness=0, bd=0)
-        toolbar_hbar = ttk.Scrollbar(toolbar_host, orient="horizontal", command=toolbar_canvas.xview)
-        toolbar_canvas.configure(xscrollcommand=toolbar_hbar.set)
-        toolbar_hbar.pack(side="bottom", fill="x")
-        toolbar_canvas.pack(fill="x")
+        # ── Variance Audit Controls — filters on row 1, actions on row 2 ────
+        # Two fixed rows, no horizontal scroll canvas needed.
+        send_box = ttk.LabelFrame(self.audit_tab, text="Variance Audit Controls", padding=10)
+        send_box.pack(fill="x", pady=(0, 5))
 
-        send_box = ttk.LabelFrame(toolbar_canvas, text="Variance Audit Controls", padding=10)
-        toolbar_canvas.create_window((0, 0), window=send_box, anchor="nw")
-
-        def _sync_toolbar_scroll(_e=None):
-            toolbar_canvas.configure(scrollregion=toolbar_canvas.bbox("all"))
-            desired = send_box.winfo_reqheight() + 2
-            if toolbar_canvas.winfo_height() != desired:
-                toolbar_canvas.configure(height=desired)
-
-        def _toolbar_wheel(event):
-            if event.state & 0x0001:  # Shift held → page scroll
-                factor = 3
-            else:
-                factor = 1
-            toolbar_canvas.xview_scroll(int(-1 * (event.delta / 120)) * factor, "units")
-            return "break"
-
-        send_box.bind("<Configure>", _sync_toolbar_scroll)
-        toolbar_canvas.bind("<Configure>", _sync_toolbar_scroll)
-        toolbar_canvas.bind("<MouseWheel>", _toolbar_wheel)
-
+        # Row 0: filters
         ttk.Label(send_box, text="Send by:").grid(row=0, column=0, sticky="w")
         audit_mode_picker = ttk.Combobox(send_box, textvariable=self.audit_send_mode, values=["District", "Store", "Sales Rep"], state="readonly", width=14)
         audit_mode_picker.grid(row=0, column=1, padx=(6, 10), sticky="w")
@@ -2569,22 +2555,21 @@ class GFHApp(tk.Tk):
         self.audit_store_combo = ttk.Combobox(send_box, textvariable=self.audit_store_filter, values=["All Stores"], state="readonly", width=22)
         self.audit_store_combo.grid(row=0, column=5, padx=(6, 10), sticky="w")
         self.audit_store_combo.bind("<<ComboboxSelected>>", self.on_audit_store_change)
-        ttk.Button(send_box, text="Check Current Filter", command=self.auto_check_audit_rows).grid(row=0, column=6, padx=(0, 6))
-        ttk.Button(send_box, text="Clear Checkmarks", command=self.clear_audit_checkmarks).grid(row=0, column=7, padx=(0, 6))
-        ttk.Button(send_box, text="Send Checked Variance Image", command=self.send_checked_variances).grid(row=0, column=8, padx=(0, 6))
-        ttk.Button(send_box, text="Send Selected Image", command=self.send_selected).grid(row=0, column=9, padx=(0, 6))
-        ttk.Button(send_box, text="Send Pending", command=self.send_pending).grid(row=0, column=10, padx=(0, 6))
-        ttk.Checkbutton(send_box, text="Only unsent", variable=self.send_only_unsent).grid(row=0, column=11, padx=(0, 4), sticky="w")
-        ttk.Button(send_box, text="Mark Cleared", command=lambda: self.mark_selected(True)).grid(row=0, column=12, padx=(0, 6))
-        ttk.Button(send_box, text="Mark Not Cleared", command=lambda: self.mark_selected(False)).grid(row=0, column=13, padx=(0, 6))
-        ttk.Button(send_box, text="Export Log", command=self.export_log).grid(row=0, column=14, padx=(0, 6))
-        ttk.Button(send_box, text="Open Folder", command=self.open_app_folder).grid(row=0, column=15, padx=(0, 6))
-        ttk.Button(send_box, text="Clear UI", command=self.clear_current_ui).grid(row=0, column=16, padx=(0, 6))
-        ttk.Button(send_box, text="Copy IMEI", command=self.copy_selected_imei).grid(row=0, column=17, padx=(0, 6))
-        ttk.Checkbutton(send_box, text="Show cleared", variable=self.include_cleared, command=self.refresh_table).grid(row=0, column=18, sticky="w", padx=(4, 0))
+        ttk.Checkbutton(send_box, text="Only unsent", variable=self.send_only_unsent).grid(row=0, column=6, padx=(0, 4), sticky="w")
+        ttk.Checkbutton(send_box, text="Show cleared", variable=self.include_cleared, command=self.refresh_table).grid(row=0, column=7, sticky="w", padx=(4, 0))
 
-        for child in send_box.winfo_children():
-            child.bind("<MouseWheel>", _toolbar_wheel)
+        # Row 1: actions
+        ttk.Button(send_box, text="Check Current Filter", command=self.auto_check_audit_rows).grid(row=1, column=0, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Clear Checkmarks", command=self.clear_audit_checkmarks).grid(row=1, column=1, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Send Checked Variance Image", command=self.send_checked_variances).grid(row=1, column=2, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Send Selected Image", command=self.send_selected).grid(row=1, column=3, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Send Pending", command=self.send_pending).grid(row=1, column=4, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Mark Cleared", command=lambda: self.mark_selected(True)).grid(row=1, column=5, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Mark Not Cleared", command=lambda: self.mark_selected(False)).grid(row=1, column=6, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Export Log", command=self.export_log).grid(row=1, column=7, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Open Folder", command=self.open_app_folder).grid(row=1, column=8, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Clear UI", command=self.clear_current_ui).grid(row=1, column=9, padx=(0, 6), pady=(8, 0), sticky="w")
+        ttk.Button(send_box, text="Copy IMEI", command=self.copy_selected_imei).grid(row=1, column=10, padx=(0, 6), pady=(8, 0), sticky="w")
 
         # ── Final Send Actions ─────────────────────────────────────────────
         action_box = ttk.LabelFrame(self.audit_tab, text="Final Send Actions", padding=(10, 6))
@@ -2790,7 +2775,6 @@ class GFHApp(tk.Tk):
                 source_name = os.path.basename(self.inventory_path.get().strip()) if self.inventory_path.get().strip() else ""
                 self.status_rows, status_summary = build_inventory_status_rows(
                     self.current_inventory_records,
-                    self.current_time_sheet_records,
                     master_store_records=self.master_store_records,
                     source_file=source_name,
                 )
@@ -2991,7 +2975,6 @@ class GFHApp(tk.Tk):
                 source_name = os.path.basename(self.inventory_path.get().strip()) if self.inventory_path.get().strip() else ""
                 self.status_rows, status_summary = build_inventory_status_rows(
                     self.current_inventory_records,
-                    self.current_time_sheet_records,
                     master_store_records=self.master_store_records,
                     source_file=source_name,
                 )
@@ -3577,38 +3560,27 @@ class GFHApp(tk.Tk):
         if path:
             self.inventory_path.set(path)
 
-    def pick_time_sheet(self) -> None:
-        path = filedialog.askopenfilename(title="Select Employee_Time_Sheet", filetypes=[("Excel Files", "*.xlsx *.xlsm *.xls"), ("All Files", "*.*")])
-        if path:
-            self.time_sheet_path.set(path)
-
     def set_status(self, text: str) -> None:
         self.status_text.set(text)
         self.update_idletasks()
 
     def load_variances(self) -> None:
         inventory = self.inventory_path.get().strip()
-        time_sheet = self.time_sheet_path.get().strip()
         if not inventory or not os.path.exists(inventory):
             messagebox.showerror("Missing file", "Select Inventory_Count_Result_Details.xlsx first.")
             return
-        if not time_sheet or not os.path.exists(time_sheet):
-            messagebox.showerror("Missing file", "Select Employee_Time_Sheet.xlsx first.")
-            return
         try:
             self.clear_current_ui(silent=True)
-            self.set_status("Reading Excel files...")
+            self.set_status("Reading Excel file...")
             inv_records = read_xlsx_records(inventory)
-            ts_records = read_xlsx_records(time_sheet)
             self.current_inventory_records = inv_records
-            self.current_time_sheet_records = ts_records
             self.master_store_records = self.db.store_master_records()
             self.set_status("Building Inventory Status and Variance Audit rows...")
 
-            self.status_rows, status_summary = build_inventory_status_rows(inv_records, ts_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
+            self.status_rows, status_summary = build_inventory_status_rows(inv_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
             self.status_row_by_key = {r.key: r for r in self.status_rows}
             self.db.upsert_inventory_status_rows(self.status_rows)
-            rows, variance_summary = extract_variances(inv_records, ts_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
+            rows, variance_summary = extract_variances(inv_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
             self.db.upsert_rows(rows)
             self.loaded_keys = {row.key for row in rows}
             self.data_loaded = True
@@ -3662,7 +3634,6 @@ class GFHApp(tk.Tk):
             source_name = os.path.basename(self.inventory_path.get().strip()) if self.inventory_path.get().strip() else ""
             self.status_rows, status_summary = build_inventory_status_rows(
                 self.current_inventory_records,
-                self.current_time_sheet_records,
                 master_store_records=self.master_store_records,
                 source_file=source_name,
             )
