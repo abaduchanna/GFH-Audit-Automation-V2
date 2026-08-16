@@ -17,6 +17,7 @@ a = Analysis(
     datas=[
         ('assets', 'assets'),
         ('GFH_Telecom_Logo.png', '.'),
+        ('gfh_icon.ico', '.'),
         ('stores.json', '.'),
         ('theme_manager.py', '.'),
         ('logo_handler.py', '.'),
