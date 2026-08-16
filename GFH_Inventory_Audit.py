@@ -2340,6 +2340,15 @@ class GFHApp(tk.Tk):
         )
         s.configure("Treeview", rowheight=max(20, round(32 * self.zoom_scale)), font=("Segoe UI", sz(10)), background="#FFFFFF", fieldbackground="#FFFFFF", foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER, borderwidth=1)
         s.configure("Treeview.Heading", font=("Segoe UI", sz(10), "bold"), background=self.COLOR_NAVY, foreground="#FFFFFF", relief="flat")
+        # Without an explicit "active" (hover) map, ttk's built-in "clam" theme
+        # falls back to its own default light-gray hover color for the heading,
+        # which is why the header briefly flashed a different color on mouse-over.
+        # Pin every state to the same navy/white so hovering never changes it.
+        s.map(
+            "Treeview.Heading",
+            background=[("active", self.COLOR_NAVY), ("pressed", self.COLOR_NAVY), ("!active", self.COLOR_NAVY)],
+            foreground=[("active", "#FFFFFF"), ("pressed", "#FFFFFF"), ("!active", "#FFFFFF")],
+        )
         s.map("Treeview", background=[("selected", self.COLOR_RED)], foreground=[("selected", "#FFFFFF")])
 
     def zoom_in(self, event=None) -> None:
@@ -2460,10 +2469,30 @@ class GFHApp(tk.Tk):
         Previous code used self.root which doesn't exist → AttributeError
         → theme toggle silently did nothing.
         """
-        if colors is None:
-            colors = self.theme_manager.get_colors()
+        # NOTE: the theme-toggle button (see create_theme_toggle_button/_on_toggle
+        # in theme_manager.py) invokes this callback as callback(new_theme), passing
+        # a plain "dark"/"light" string — not a colors dict. Always re-fetch the
+        # live colors dict from the theme manager instead of trusting `colors`.
+        colors = self.theme_manager.get_colors()
         # Pass `self` (the tk.Tk root), not self.root (which doesn't exist)
         self.theme_manager.apply_theme_to_window(self)
+
+        # apply_theme_to_window() sets the *actual* dark/light panel colors, but
+        # self.COLOR_BG / COLOR_CARD / COLOR_TEXT / COLOR_MUTED / COLOR_BORDER were
+        # hardcoded once at startup (always the light-mode values) and never
+        # updated. _apply_styles() below re-applies those hardcoded attributes to
+        # every ttk style, which was silently undoing the theme switch and made
+        # panels (TLabelframe, TFrame, Treeview, etc.) stay stuck in light colors
+        # even in dark mode. Sync them to the active theme first so the two style
+        # passes agree instead of fighting each other.
+        self.COLOR_BG = colors["bg"]
+        self.COLOR_CARD = colors["panel"]
+        self.COLOR_TEXT = colors["text"]
+        self.COLOR_MUTED = colors["text_dim"]
+        self.COLOR_BORDER = colors["border"]
+        # COLOR_NAVY / COLOR_RED are brand-fixed and intentionally stay the same
+        # in both themes so buttons/tabs/headers keep matching the sun/moon toggle.
+
         # apply_theme_to_window() re-styles generic ttk widgets (TButton, TNotebook.Tab, etc.)
         # with theme-specific panel colors. Re-assert the brand button/tab styling right after
         # so every button and the selected tab keeps matching the red sun/moon toggle button.
