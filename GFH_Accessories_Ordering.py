@@ -1616,8 +1616,16 @@ class GFHAccessoriesAutomationGUI:
             return None
 
     def build_ui(self):
-        # Header created by FixedHeaderManager in _header method
-
+        # Header (logo, title, theme toggle) — fixed navy, never themed.
+        # This was previously stripped out, leaving only a stray comment
+        # and no self.header_mgr at all, which is why the header, logo,
+        # and theme toggle button were all missing.
+        self.header_mgr = FixedHeaderManager(self.root, title="GFH Accessories Ordering")
+        self.header_mgr.add_theme_toggle(self.theme_manager, callback=self._apply_theme)
+        if self.logo_source:
+            self.header_mgr.set_logo(logo_path=self.logo_source, text="GFH")
+        else:
+            self.header_mgr.set_logo(text="GFH")
 
         body = tk.Frame(self.root, bg=APP_BG)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
