@@ -2342,7 +2342,7 @@ class GFHApp(tk.Tk):
         s.configure("TLabelframe", background=self.COLOR_BG, bordercolor=self.COLOR_BORDER, relief="solid")
         s.configure("TLabelframe.Label", background=self.COLOR_BG, foreground=self.COLOR_NAVY, font=("Segoe UI", sz(10), "bold"))
         s.configure("TNotebook", background=self.COLOR_BG, borderwidth=0)
-        s.configure("TNotebook.Tab", padding=(18, 9), font=("Segoe UI", sz(10), "bold"), background="#E9ECF5", foreground=self.COLOR_NAVY)
+        s.configure("TNotebook.Tab", padding=(18, 9), font=("Segoe UI", sz(10), "bold"), background=self.COLOR_PANEL_ALT, foreground=self.COLOR_TEXT)
         s.map(
             "TNotebook.Tab",
             background=[("selected", self.COLOR_RED), ("active", "#FFE8EC")],
@@ -2390,6 +2390,7 @@ class GFHApp(tk.Tk):
         self.COLOR_MUTED = "#5F6678"
         self.COLOR_BORDER = "#D9DEEA"
         self.COLOR_INPUT = "#FFFFFF"
+        self.COLOR_PANEL_ALT = "#eef0f6"
         self.COLOR_SUCCESS = "#17A65B"
 
         self.configure(bg=self.COLOR_BG)
@@ -2502,6 +2503,7 @@ class GFHApp(tk.Tk):
         self.COLOR_MUTED = colors["text_dim"]
         self.COLOR_BORDER = colors["border"]
         self.COLOR_INPUT = colors.get("input", colors["panel"])
+        self.COLOR_PANEL_ALT = colors.get("panel_alt", colors["panel"])
         # COLOR_NAVY / COLOR_RED are brand-fixed and intentionally stay the same
         # in both themes so buttons/tabs/headers keep matching the sun/moon toggle.
 
