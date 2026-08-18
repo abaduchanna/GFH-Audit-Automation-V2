@@ -1574,7 +1574,8 @@ class GFHAccessoriesAutomationGUI:
                 _ico_path = _os.path.join(_meipass, _ico_name)
                 if _os.path.exists(_ico_path):
                     try:
-                        self.root.iconbitmap(_ico_path)
+                        self.root.iconbitmap(default=_ico_path)
+                        self.root.after(200, lambda p=_ico_path: self.root.iconbitmap(default=p))
                     except Exception:
                         pass
                     break
@@ -1586,7 +1587,8 @@ class GFHAccessoriesAutomationGUI:
             _ico_path = _os.path.join(_tmp_dir, "gfh_app_icon.ico")
             with open(_ico_path, "wb") as _f:
                 _f.write(_data)
-            self.root.iconbitmap(_ico_path)
+            self.root.iconbitmap(default=_ico_path)
+            self.root.after(200, lambda p=_ico_path: self.root.iconbitmap(default=p))
         except Exception:
             pass
     def resized_logo(self, max_width=260, max_height=70):
