@@ -754,27 +754,48 @@ def read_xlsx_records(path: str | Path) -> List[Dict[str, str]]:
     return reader.read_sheet()
 
 
-def build_store_maps(master_store_records: Optional[List[Dict[str, str]]] = None) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """District and display-name lookups, sourced from the saved Store List (master records).
-
-    Employee/rep names are no longer sourced from a separate time sheet file — they come
-    directly from the "Created By" column in Inventory_Count_Result_Details instead.
-    """
+def build_store_maps(time_sheet_records: List[Dict[str, str]]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """Build district, display-name, and rep-name lookups from the Employee Time Sheet."""
     district_by_store: Dict[str, str] = {}
     display_by_store: Dict[str, str] = {}
+    rep_by_store: Dict[str, str] = {}
+    latest_clock_by_store: Dict[str, float] = {}
 
-    for rec in master_store_records or []:
-        district = normalize_district(rec.get("District", ""))
-        store = display_store(rec.get("Store", ""))
-        norm = normalize_store(store)
+    if not time_sheet_records:
+        return district_by_store, display_by_store, rep_by_store
+
+    sample = time_sheet_records[0]
+    store_col = find_column(sample, ["Store"])
+    district_col = find_column(sample, ["District"])
+    rep_col = find_column(sample, ["Salesperson", "Sales Person", "Rep Name", "Employee", "Employee Name"])
+    clock_in_col = find_column(sample, ["Clock In", "Clock-In", "Date", "Work Date"])
+    user_login_col = find_column(sample, ["User Login", "Username", "Login"])
+
+    if not store_col:
+        return district_by_store, display_by_store, rep_by_store
+
+    for index, rec in enumerate(time_sheet_records):
+        store_raw = rec.get(store_col, "")
+        norm = normalize_store(store_raw)
         if not norm:
             continue
-        if district and district != "Unknown":
-            district_by_store[norm] = district
-        if store:
-            display_by_store[norm] = store
 
-    return district_by_store, display_by_store
+        display_by_store[norm] = display_store(store_raw)
+        if district_col:
+            district = normalize_district(rec.get(district_col, ""))
+            if district and district != "Unknown":
+                district_by_store[norm] = district
+
+        rep_name = safe_text(rec.get(rep_col, "")) if rep_col else ""
+        if not rep_name and user_login_col:
+            rep_name = safe_text(rec.get(user_login_col, ""))
+
+        date_score = numeric_excel_date(rec.get(clock_in_col, "")) if clock_in_col else float(index)
+        if rep_name and date_score >= latest_clock_by_store.get(norm, -1.0):
+            rep_by_store[norm] = rep_name
+            latest_clock_by_store[norm] = date_score
+
+    return district_by_store, display_by_store, rep_by_store
 
 
 def build_rep_by_store_from_created_by(
@@ -866,13 +887,24 @@ def filter_latest_inventory_records(inventory_records: List[Dict[str, str]]) -> 
 
 def extract_variances(
     inventory_records: List[Dict[str, str]],
+    time_sheet_records: List[Dict[str, str]],
     master_store_records: Optional[List[Dict[str, str]]] = None,
     source_file: str = "",
 ) -> Tuple[List[VarianceRow], Dict[str, int]]:
     if not inventory_records:
         return [], {"completed": 0, "pending": 0, "stores_total": 0, "skipped_sims": 0, "raw_inventory_rows": 0, "latest_inventory_rows": 0, "stale_inventory_rows": 0, "latest_created_by_groups": 0}
 
-    district_by_store, display_by_store = build_store_maps(master_store_records)
+    district_by_store, display_by_store, rep_by_store = build_store_maps(time_sheet_records)
+    for rec in master_store_records or []:
+        district = normalize_district(rec.get("District", ""))
+        store = display_store(rec.get("Store", ""))
+        norm = normalize_store(store)
+        if not norm:
+            continue
+        if district and district != "Unknown":
+            district_by_store[norm] = district
+        if store and norm not in display_by_store:
+            display_by_store[norm] = store
     sample = inventory_records[0]
     store_col = find_column(sample, ["Store"])
     product_col = find_column(sample, ["Product Description", "Product"])
@@ -981,13 +1013,12 @@ def extract_variances(
 
 def build_inventory_status_rows(
     inventory_records: List[Dict[str, str]],
+    time_sheet_records: List[Dict[str, str]],
     master_store_records: Optional[List[Dict[str, str]]] = None,
     source_file: str = "",
 ) -> Tuple[List[InventoryStatusRow], Dict[str, int]]:
-    district_by_store, display_by_store = build_store_maps(master_store_records)
+    district_by_store, display_by_store, rep_by_store = build_store_maps(time_sheet_records)
     master_display_by_store: Dict[str, str] = dict(display_by_store)
-    # Rep/employee name comes from the "Created By" column of the inventory count Excel.
-    rep_by_store = build_rep_by_store_from_created_by(inventory_records)
     inv_display_by_store: Dict[str, str] = {}
     completed_store_norms: set[str] = set()
 
@@ -2411,7 +2442,7 @@ class GFHApp(tk.Tk):
         s.configure("TEntry", fieldbackground=self.COLOR_INPUT, foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
         s.configure("TCombobox", fieldbackground=self.COLOR_INPUT, foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
         s.configure("TLabelframe", background=self.COLOR_BG, bordercolor=self.COLOR_BORDER, relief="solid")
-        s.configure("TLabelframe.Label", background=self.COLOR_BG, foreground=self.COLOR_NAVY, font=("Segoe UI", sz(10), "bold"))
+        s.configure("TLabelframe.Label", background=self.COLOR_BG, foreground=self.COLOR_TEXT, font=("Segoe UI", sz(10), "bold"))
         s.configure("TNotebook", background=self.COLOR_BG, borderwidth=0)
         s.configure("TNotebook.Tab", padding=(18, 9), font=("Segoe UI", sz(10), "bold"), background=self.COLOR_PANEL_ALT, foreground=self.COLOR_TEXT)
         s.map(
@@ -2506,8 +2537,11 @@ class GFHApp(tk.Tk):
         self._file_row(file_box, 0, "Inventory_Count_Result_Details", self.inventory_path, self.pick_inventory)
         self._file_row(file_box, 1, "Employee_Time_Sheet", self.time_sheet_path, self.pick_time_sheet)
         ttk.Button(file_box, text="Load Variances", command=self.load_variances).grid(row=0, column=3, rowspan=2, padx=(12, 0), sticky="ns")
-        ttk.Button(file_box, text="−", width=3, command=self.zoom_out).grid(row=0, column=4, padx=(8, 2), sticky="ew")
-        ttk.Button(file_box, text="+", width=3, command=self.zoom_in).grid(row=0, column=5, padx=(2, 0), sticky="ew")
+        # + / − zoom buttons stacked vertically (+ on top, − on bottom)
+        zoom_frame = ttk.Frame(file_box)
+        zoom_frame.grid(row=0, column=4, rowspan=2, padx=(8, 0), sticky="ns")
+        ttk.Button(zoom_frame, text="+", width=3, command=self.zoom_in).pack(fill="x", pady=(0, 2))
+        ttk.Button(zoom_frame, text="−", width=3, command=self.zoom_out).pack(fill="x")
         file_box.columnconfigure(1, weight=1)
         self.bind("<Control-equal>", self.zoom_in)
         self.bind("<Control-plus>", self.zoom_in)
