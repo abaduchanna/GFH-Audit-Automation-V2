@@ -2230,15 +2230,6 @@ class GFHApp(tk.Tk):
         self.title(APP_NAME)
         self._app_icon = None
         # Windows groups windows in the taskbar by process/AppUserModelID;
-        # without an explicit one set, this app can inherit python.exe's
-        # generic icon in the taskbar even though the titlebar icon is
-        # correct. Must be set before the window icon/first paint.
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "GFHTelecom.InventoryAudit")
-        except Exception:
-            pass
         # Dynamic screen resolution support: size to 90% of the screen and
         # center it (DPI-aware), then stay a normal resizable top-level so
         # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
@@ -4970,6 +4961,14 @@ def _enable_dpi_awareness() -> None:
 
 
 def main() -> None:
+    # AppUserModelID MUST be set before GFHApp() — that class inherits
+    # tk.Tk so the window is constructed on instantiation. Setting it
+    # inside __init__ is already too late; Windows ignores it.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.InventoryAudit")
+    except Exception:
+        pass
     _enable_dpi_awareness()
     app = GFHApp()
     app.mainloop()
