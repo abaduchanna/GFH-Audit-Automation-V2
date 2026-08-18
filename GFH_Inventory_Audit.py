@@ -1440,6 +1440,37 @@ class VarianceDatabase:
             ).fetchone()
         return safe_text(row[0]) if row else ""
 
+    def get_setting(self, key: str, default: str = "") -> str:
+        """Read a key from the app_settings table (created on first use)."""
+        try:
+            with self.connect() as con:
+                con.execute(
+                    "CREATE TABLE IF NOT EXISTS app_settings "
+                    "(key TEXT PRIMARY KEY, value TEXT DEFAULT '')"
+                )
+                row = con.execute(
+                    "SELECT value FROM app_settings WHERE key=?", (key,)
+                ).fetchone()
+            return safe_text(row[0]) if row else default
+        except Exception:
+            return default
+
+    def save_setting(self, key: str, value: str) -> None:
+        """Persist a key/value pair in the app_settings table."""
+        try:
+            with self.connect() as con:
+                con.execute(
+                    "CREATE TABLE IF NOT EXISTS app_settings "
+                    "(key TEXT PRIMARY KEY, value TEXT DEFAULT '')"
+                )
+                con.execute(
+                    "INSERT INTO app_settings(key,value) VALUES(?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, value),
+                )
+        except Exception:
+            pass
+
     def save_district_manager(self, district: str, dm_name: str, phone: str) -> None:
         district = normalize_district(district)
         dm_name = safe_text(dm_name)
@@ -1978,11 +2009,34 @@ class ImageRenderer:
 
 
 class WhatsAppSender:
-    def __init__(self, status_callback=None):
+    def __init__(self, status_callback=None, mode="desktop"):
         self.status_callback = status_callback or (lambda text: None)
+        # "desktop" uses pyautogui to drive WhatsApp Desktop app.
+        # "web" opens web.whatsapp.com in the default browser.
+        self.mode = mode if mode in ("desktop", "web") else "desktop"
 
     def log(self, text: str) -> None:
         self.status_callback(text)
+
+    def _force_focus_whatsapp(self) -> bool:
+        """Focus WhatsApp Desktop window using ctypes (most reliable on Win10/11)."""
+        try:
+            import ctypes
+            import win32gui
+            found = []
+            def _cb(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd) and "whatsapp" in (win32gui.GetWindowText(hwnd) or "").lower():
+                    found.append(hwnd)
+            win32gui.EnumWindows(_cb, None)
+            if found:
+                hwnd = found[0]
+                ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                time.sleep(1.0)
+                return True
+        except Exception:
+            pass
+        return self._activate_whatsapp_window()  # pygetwindow fallback
 
     @staticmethod
     def _import_pyautogui():
@@ -2074,10 +2128,13 @@ class WhatsAppSender:
             pyautogui.write(text, interval=0.01)
 
     def send_image(self, group_name: str, image_path: Path, text_message: str = "") -> None:
+        if self.mode == "web":
+            self._send_image_web(group_name, image_path, text_message)
+            return
         pyautogui = self._import_pyautogui()
         self.log(f"Opening WhatsApp Desktop for {group_name}...")
         self._open_whatsapp()
-        self._activate_whatsapp_window()
+        self._force_focus_whatsapp()
         self.log(f"Searching group: {group_name}")
         self._type_group_search(pyautogui, group_name)
 
@@ -2102,15 +2159,23 @@ class WhatsAppSender:
         time.sleep(2.0)
         self.log(f"Sent image to {group_name}")
 
+    def _send_image_web(self, group_name: str, image_path: Path, text_message: str = "") -> None:
+        """Send image via WhatsApp Web by opening it in the default browser."""
+        self.log(f"WhatsApp Web: attaching image for {group_name} (manual step required — "
+                 "open web.whatsapp.com, find the group, and attach the image manually).")
+        self.log(f"Image path: {image_path}")
 
     def send_text(self, group_name: str, text_message: str) -> None:
+        if self.mode == "web":
+            self._send_text_web(group_name, text_message)
+            return
         message = safe_text(text_message)
         if not message:
             return
         pyautogui = self._import_pyautogui()
         self.log(f"Opening WhatsApp Desktop for {group_name}...")
         self._open_whatsapp()
-        self._activate_whatsapp_window()
+        self._force_focus_whatsapp()
         self.log(f"Searching group: {group_name}")
         self._type_group_search(pyautogui, group_name)
         self.log("Sending WhatsApp text message...")
@@ -2119,6 +2184,19 @@ class WhatsAppSender:
         pyautogui.press("enter")
         time.sleep(1.0)
         self.log(f"Sent text to {group_name}")
+
+    def _send_text_web(self, group_name: str, text_message: str) -> None:
+        """Send text via WhatsApp Web by opening a direct wa.me link."""
+        message = safe_text(text_message)
+        if not message:
+            return
+        import urllib.parse, webbrowser
+        # wa.me won't work for group chats (no phone number) — open web.whatsapp.com
+        # and log the message so the user can paste it manually if needed.
+        url = f"https://web.whatsapp.com"
+        webbrowser.open(url)
+        self.log(f"WhatsApp Web opened. Group: {group_name!r} | Message: {message!r}")
+        self.log("Tip: use WhatsApp Web search (Ctrl+F) to find the group and paste the message.")
 
 
 
@@ -2230,6 +2308,7 @@ class GFHApp(tk.Tk):
         self._db_sync_paused: bool = False   # paused while THIS instance is writing
         self.master_store_records = self.db.store_master_records()
         self.current_inventory_records: List[Dict[str, str]] = []
+        self.current_time_sheet_records: List[Dict[str, str]] = []
 
         self.store_district_var = tk.StringVar(value="")
         self.store_name_var = tk.StringVar(value="")
@@ -2250,6 +2329,7 @@ class GFHApp(tk.Tk):
         self.selected_exclusion_key_var = tk.StringVar(value="")
 
         self.inventory_path = tk.StringVar(value="")
+        self.time_sheet_path = tk.StringVar(value="")
         self.status_text = tk.StringVar(value="Select the Inventory_Count_Result_Details file, then click Load Variances. No data loaded yet.")
         self.summary_text = tk.StringVar(value="No data loaded")
         self.include_cleared = tk.BooleanVar(value=False)
@@ -2433,7 +2513,8 @@ class GFHApp(tk.Tk):
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
         self._file_row(file_box, 0, "Inventory_Count_Result_Details", self.inventory_path, self.pick_inventory)
-        ttk.Button(file_box, text="Load Variances", command=self.load_variances).grid(row=0, column=3, padx=(12, 0), sticky="ns")
+        self._file_row(file_box, 1, "Employee_Time_Sheet", self.time_sheet_path, self.pick_time_sheet)
+        ttk.Button(file_box, text="Load Variances", command=self.load_variances).grid(row=0, column=3, rowspan=2, padx=(12, 0), sticky="ns")
         ttk.Button(file_box, text="−", width=3, command=self.zoom_out).grid(row=0, column=4, padx=(8, 2), sticky="ew")
         ttk.Button(file_box, text="+", width=3, command=self.zoom_in).grid(row=0, column=5, padx=(2, 0), sticky="ew")
         file_box.columnconfigure(1, weight=1)
@@ -2832,6 +2913,7 @@ class GFHApp(tk.Tk):
                 source_name = os.path.basename(self.inventory_path.get().strip()) if self.inventory_path.get().strip() else ""
                 self.status_rows, status_summary = build_inventory_status_rows(
                     self.current_inventory_records,
+                    self.current_time_sheet_records,
                     master_store_records=self.master_store_records,
                     source_file=source_name,
                 )
@@ -3032,6 +3114,7 @@ class GFHApp(tk.Tk):
                 source_name = os.path.basename(self.inventory_path.get().strip()) if self.inventory_path.get().strip() else ""
                 self.status_rows, status_summary = build_inventory_status_rows(
                     self.current_inventory_records,
+                    self.current_time_sheet_records,
                     master_store_records=self.master_store_records,
                     source_file=source_name,
                 )
@@ -3107,6 +3190,21 @@ class GFHApp(tk.Tk):
                 return
 
     def _build_dm_tab(self) -> None:
+        # WhatsApp send mode selector at top of tab
+        mode_frame = ttk.LabelFrame(self.dm_tab, text="WhatsApp Send Mode", padding=8)
+        mode_frame.pack(fill="x", pady=(0, 8))
+        mode_row = ttk.Frame(mode_frame)
+        mode_row.pack(fill="x")
+        ttk.Label(mode_row, text="Send reports via:").pack(side="left", padx=(0, 10))
+        self.wa_mode_var = tk.StringVar(value=self.db.get_setting("whatsapp_mode", "desktop"))
+        ttk.Radiobutton(mode_row, text="WhatsApp Desktop App (pyautogui)",
+                        variable=self.wa_mode_var, value="desktop").pack(side="left", padx=(0, 12))
+        ttk.Radiobutton(mode_row, text="WhatsApp Web (browser)",
+                        variable=self.wa_mode_var, value="web").pack(side="left")
+        ttk.Button(mode_frame, text="Save Mode",
+                   command=lambda: self.db.save_setting("whatsapp_mode", self.wa_mode_var.get()) or
+                   self.set_status(f"WhatsApp mode saved: {self.wa_mode_var.get()}")).pack(anchor="w", pady=(6, 0))
+
         # Side-by-side layout using PanedWindow
         pw = ttk.PanedWindow(self.dm_tab, orient="horizontal")
         pw.pack(fill="both", expand=True)
@@ -3617,27 +3715,38 @@ class GFHApp(tk.Tk):
         if path:
             self.inventory_path.set(path)
 
+    def pick_time_sheet(self) -> None:
+        path = filedialog.askopenfilename(title="Select Employee_Time_Sheet", filetypes=[("Excel Files", "*.xlsx *.xlsm *.xls"), ("All Files", "*.*")])
+        if path:
+            self.time_sheet_path.set(path)
+
     def set_status(self, text: str) -> None:
         self.status_text.set(text)
         self.update_idletasks()
 
     def load_variances(self) -> None:
         inventory = self.inventory_path.get().strip()
+        time_sheet = self.time_sheet_path.get().strip()
         if not inventory or not os.path.exists(inventory):
             messagebox.showerror("Missing file", "Select Inventory_Count_Result_Details.xlsx first.")
             return
+        if not time_sheet or not os.path.exists(time_sheet):
+            messagebox.showerror("Missing file", "Select Employee_Time_Sheet.xlsx first.")
+            return
         try:
             self.clear_current_ui(silent=True)
-            self.set_status("Reading Excel file...")
+            self.set_status("Reading Excel files...")
             inv_records = read_xlsx_records(inventory)
+            ts_records = read_xlsx_records(time_sheet)
             self.current_inventory_records = inv_records
+            self.current_time_sheet_records = ts_records
             self.master_store_records = self.db.store_master_records()
             self.set_status("Building Inventory Status and Variance Audit rows...")
 
-            self.status_rows, status_summary = build_inventory_status_rows(inv_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
+            self.status_rows, status_summary = build_inventory_status_rows(inv_records, ts_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
             self.status_row_by_key = {r.key: r for r in self.status_rows}
             self.db.upsert_inventory_status_rows(self.status_rows)
-            rows, variance_summary = extract_variances(inv_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
+            rows, variance_summary = extract_variances(inv_records, ts_records, master_store_records=self.master_store_records, source_file=os.path.basename(inventory))
             self.db.upsert_rows(rows)
             self.loaded_keys = {row.key for row in rows}
             self.data_loaded = True
@@ -3691,6 +3800,7 @@ class GFHApp(tk.Tk):
             source_name = os.path.basename(self.inventory_path.get().strip()) if self.inventory_path.get().strip() else ""
             self.status_rows, status_summary = build_inventory_status_rows(
                 self.current_inventory_records,
+                self.current_time_sheet_records,
                 master_store_records=self.master_store_records,
                 source_file=source_name,
             )
@@ -4319,7 +4429,8 @@ class GFHApp(tk.Tk):
     def _send_rows(self, rows: List[VarianceRow], mode: str, manual: bool) -> None:
         try:
             renderer = ImageRenderer()
-            sender = WhatsAppSender(status_callback=self.set_status)
+            sender = WhatsAppSender(status_callback=self.set_status,
+                                    mode=getattr(self, "wa_mode_var", None) and self.wa_mode_var.get() or "desktop")
             batches = self.grouped_batches(rows, mode)
             send_mode_for_file = mode
             for batch_title, district, batch_rows in batches:
@@ -4467,7 +4578,8 @@ class GFHApp(tk.Tk):
 
     def _send_status_rows(self, rows: List[InventoryStatusRow], mode: str) -> None:
         try:
-            sender = WhatsAppSender(status_callback=self.set_status)
+            sender = WhatsAppSender(status_callback=self.set_status,
+                                    mode=getattr(self, "wa_mode_var", None) and self.wa_mode_var.get() or "desktop")
             batches = self.grouped_status_batches(rows, mode)
             for batch_title, district, batch_rows in batches:
                 group_name = group_name_for_district(district, self.db)
@@ -4599,7 +4711,8 @@ class GFHApp(tk.Tk):
 
     def _send_starting_message_thread(self, districts: List[str]) -> None:
         try:
-            sender = WhatsAppSender(status_callback=self.set_status)
+            sender = WhatsAppSender(status_callback=self.set_status,
+                                    mode=getattr(self, "wa_mode_var", None) and self.wa_mode_var.get() or "desktop")
             message = "Please complete an Inventory count in 15 minutes."
             for district in districts:
                 group_name = group_name_for_district(district, self.db)
@@ -4651,7 +4764,8 @@ class GFHApp(tk.Tk):
 
     def _send_single_reminder_thread(self, districts: List[str], uncleared_rows: List[VarianceRow], reminder_number: int, message: str) -> None:
         try:
-            sender = WhatsAppSender(status_callback=self.set_status)
+            sender = WhatsAppSender(status_callback=self.set_status,
+                                    mode=getattr(self, "wa_mode_var", None) and self.wa_mode_var.get() or "desktop")
             for district in districts:
                 district_rows = [row for row in uncleared_rows if normalize_district(row.district) == normalize_district(district)]
                 if not district_rows:
@@ -4697,7 +4811,7 @@ class GFHApp(tk.Tk):
     def _send_final_district_result_thread(self, districts: List[str]) -> None:
         final_results: List[Dict[str, str]] = []
         try:
-            sender = WhatsAppSender(self.set_status)
+            sender = WhatsAppSender(self.set_status, mode=getattr(self, "wa_mode_var", None) and self.wa_mode_var.get() or "desktop")
             renderer = ImageRenderer()
             all_rows = self.db.get_rows_by_keys(self.loaded_keys)
             self.set_status("Sending final district audit results...")
