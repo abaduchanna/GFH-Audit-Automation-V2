@@ -1566,14 +1566,6 @@ class GFHAccessoriesAutomationGUI:
             _candidates.append(os.path.join(os.path.dirname(sys.executable), "GFH_Telecom_Logo.png"))
         _candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "GFH_Telecom_Logo.png"))
         self.logo_source = next((p for p in _candidates if os.path.exists(p)), None)
-        # Windows needs an AppUserModelID or the taskbar can show a
-        # blank/generic icon even when the titlebar icon is set.
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "GFHTelecom.AccessoriesOrdering")
-        except Exception:
-            pass
         # Try _MEIPASS first (PyInstaller onefile extraction dir)
         import sys as _sys, os as _os
         _meipass = getattr(_sys, "_MEIPASS", None)
@@ -2194,10 +2186,6 @@ def _enable_dpi_awareness() -> None:
     try:
         import ctypes
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.App")
-        except Exception:
-            pass
-        try:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)  # system DPI aware
         except Exception:
             ctypes.windll.user32.SetProcessDPIAware()
@@ -2208,6 +2196,15 @@ def _enable_dpi_awareness() -> None:
 if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
+    # Must be before GFHAccessoriesAutomationGUI() — that class creates
+    # self.root = tk.Tk() inside __init__, so the window already exists
+    # by the time __init__ body runs. Setting AppUserModelID after that
+    # point is ignored by Windows for taskbar grouping.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFHTelecom.AccessoriesOrdering")
+    except Exception:
+        pass
     _enable_dpi_awareness()
     try:
         app = GFHAccessoriesAutomationGUI()
