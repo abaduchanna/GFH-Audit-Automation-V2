@@ -73,7 +73,7 @@ def _auto_install_packages() -> None:
         import tkinter as _tk
         from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
         _splash = _tk.Tk()
-        _splash.title("GFH Inventory Audit — Installing packages…")
+        _splash.title("GFH Inventory Audit (Timesheet Edition) — Installing packages…")
         _splash.geometry("540x90")
         _splash.resizable(False, False)
         _lbl = _tk.Label(
@@ -767,8 +767,8 @@ def build_store_maps(time_sheet_records: List[Dict[str, str]]) -> Tuple[Dict[str
     sample = time_sheet_records[0]
     store_col = find_column(sample, ["Store"])
     district_col = find_column(sample, ["District"])
-    rep_col = find_column(sample, ["Salesperson", "Sales Person", "Rep Name", "Employee", "Employee Name"])
-    clock_in_col = find_column(sample, ["Clock In", "Clock-In", "Date", "Work Date"])
+    rep_col = find_column(sample, ["Employee", "Employee Name", "Salesperson", "Sales Person", "Rep Name"])
+    clock_in_col = find_column(sample, ["Clock In", "Clock-In", "Date", "Work Date", "Clock In "])
     user_login_col = find_column(sample, ["User Login", "Username", "Login"])
 
     if not store_col:
@@ -1067,24 +1067,20 @@ class VarianceDatabase:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_wal_mode()   # upgrade journal mode before any other access
-        self._backup_on_startup() # keep a rolling backup to recover from corruption
+        self._ensure_wal_mode()
+        self._backup_on_startup()
         self._init_db()
 
     def _ensure_wal_mode(self) -> None:
-        """Force WAL mode even on existing DELETE-mode databases.
-        Called before _init_db so the very first connection is already safe."""
         try:
             con = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
-            mode = con.execute("PRAGMA journal_mode=WAL").fetchone()
+            con.execute("PRAGMA journal_mode=WAL")
             con.execute("PRAGMA synchronous=NORMAL")
             con.close()
         except Exception:
             pass
 
     def _backup_on_startup(self) -> None:
-        """Keep a rolling .bak copy so we can recover from corruption.
-        Overwrites the backup only if the current DB passes integrity_check."""
         backup_path = self.db_path.with_suffix(".bak.sqlite3")
         try:
             if self.db_path.exists():
@@ -1094,7 +1090,6 @@ class VarianceDatabase:
                     import shutil
                     shutil.copy2(self.db_path, backup_path)
                 else:
-                    # DB is malformed — restore from backup if available
                     if backup_path.exists():
                         import shutil
                         shutil.copy2(backup_path, self.db_path)
@@ -1103,38 +1098,18 @@ class VarianceDatabase:
             pass
 
     def connect(self):
-        """Open a hardened SQLite connection.
-
-        WAL mode + NORMAL sync are set on every connection — not just at
-        init — so that:
-        1. Databases created before WAL was introduced are transparently
-           upgraded on first open.
-        2. If OneDrive or another process ever degrades the journal mode,
-           the next connection restores it automatically.
-
-        WAL mode is the key anti-corruption setting:
-          DELETE (old default) — writes to the DB file directly then
-            deletes a journal file. If the process is killed or OneDrive
-            locks the file mid-write, the DB page is half-written → malformed.
-          WAL (Write-Ahead Logging) — writes to a separate -wal file and
-            only checkpoints into the main DB at safe points. A crash or
-            file lock never touches a committed page, so the main file
-            stays consistent.
-        """
         con = sqlite3.connect(self.db_path, timeout=30,
-                              isolation_level=None,   # autocommit for PRAGMAs
+                              isolation_level=None,
                               check_same_thread=False)
         try:
-            # Must run outside a transaction
             con.execute("PRAGMA journal_mode=WAL")
-            con.execute("PRAGMA synchronous=NORMAL")   # safe with WAL
-            con.execute("PRAGMA busy_timeout=30000")   # wait up to 30s for locks
-            con.execute("PRAGMA cache_size=-8000")     # 8 MB page cache
+            con.execute("PRAGMA synchronous=NORMAL")
+            con.execute("PRAGMA busy_timeout=30000")
+            con.execute("PRAGMA cache_size=-8000")
             con.execute("PRAGMA temp_store=MEMORY")
-            con.execute("PRAGMA mmap_size=134217728")  # 128 MB memory-mapped I/O
+            con.execute("PRAGMA mmap_size=134217728")
         except Exception:
             pass
-        # Switch back to manual transaction control for context-manager use
         con.isolation_level = ""
         return con
 
@@ -1289,6 +1264,46 @@ class VarianceDatabase:
                 con.execute("ALTER TABLE device_exclusions ADD COLUMN comments TEXT DEFAULT ''")
             if "district" not in exclusion_columns:
                 con.execute("ALTER TABLE device_exclusions ADD COLUMN district TEXT DEFAULT ''")
+
+            # Created By → Employee mapping table (Timesheet Edition)
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS created_by_mappings (
+                    created_by TEXT PRIMARY KEY,
+                    employee_name TEXT DEFAULT '',
+                    phone TEXT DEFAULT ''
+                )
+            """)
+
+    def get_created_by_mappings(self) -> List[Dict[str, str]]:
+        """Return all created_by → employee mappings."""
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT created_by, employee_name, phone FROM created_by_mappings ORDER BY created_by"
+            ).fetchall()
+        return [{"created_by": r[0], "employee_name": r[1], "phone": r[2]} for r in rows]
+
+    def upsert_created_by_mapping(self, created_by: str, employee_name: str, phone: str) -> None:
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO created_by_mappings(created_by, employee_name, phone) VALUES(?,?,?) "
+                "ON CONFLICT(created_by) DO UPDATE SET employee_name=excluded.employee_name, phone=excluded.phone",
+                (created_by.strip(), employee_name.strip(), phone.strip()),
+            )
+
+    def delete_created_by_mapping(self, created_by: str) -> None:
+        with self.connect() as con:
+            con.execute("DELETE FROM created_by_mappings WHERE created_by=?", (created_by,))
+
+    def resolve_employee_for_created_by(self, created_by: str) -> Dict[str, str]:
+        """Return {employee_name, phone} for a given Created By value, or empty strings."""
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT employee_name, phone FROM created_by_mappings WHERE created_by=?",
+                (created_by.strip(),),
+            ).fetchone()
+        if row:
+            return {"employee_name": row[0], "phone": row[1]}
+        return {"employee_name": "", "phone": ""}
 
     def upsert_rows(self, rows: List[VarianceRow]) -> None:
         with self.connect() as con:
@@ -2314,7 +2329,7 @@ GFH_SQUARE_ICON_B64 = open(os.path.join(os.path.dirname(os.path.abspath(__file__
 class GFHApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(APP_NAME)
+        self.title(APP_NAME + " — Timesheet Edition")
         self._app_icon = None
         # Windows groups windows in the taskbar by process/AppUserModelID;
         # Dynamic screen resolution support: size to 90% of the screen and
@@ -2591,7 +2606,7 @@ class GFHApp(tk.Tk):
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
         self._file_row(file_box, 0, "Inventory_Count_Result_Details", self.inventory_path, self.pick_inventory)
-        self._file_row(file_box, 1, "Employee_Time_Sheet", self.time_sheet_path, self.pick_time_sheet)
+        self._file_row(file_box, 1, "Timesheet (timesheets_*.xlsx)", self.time_sheet_path, self.pick_time_sheet)
         ttk.Button(file_box, text="Load Variances", command=self.load_variances).grid(row=0, column=3, rowspan=2, padx=(12, 0), sticky="ns")
         # + / − zoom buttons stacked vertically (+ on top, − on bottom)
         zoom_frame = ttk.Frame(file_box)
@@ -2610,12 +2625,14 @@ class GFHApp(tk.Tk):
         self.store_tab = ttk.Frame(self.notebook, padding=10)
         self.rep_tab = ttk.Frame(self.notebook, padding=10)
         self.dm_tab = ttk.Frame(self.notebook, padding=10)
+        self.mapping_tab = ttk.Frame(self.notebook, padding=10)
         self.exclusion_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.status_tab, text="Inventory Audit Status")
         self.notebook.add(self.audit_tab, text="Variance Audit")
         self.notebook.add(self.store_tab, text="Store List")
         self.notebook.add(self.rep_tab, text="Employees")
         self.notebook.add(self.dm_tab, text="District DMs")
+        self.notebook.add(self.mapping_tab, text="Created By → Employee")
         self.notebook.add(self.exclusion_tab, text="Excluded Devices")
 
         self._build_status_tab()
@@ -2623,6 +2640,7 @@ class GFHApp(tk.Tk):
         self._build_store_tab()
         self._build_rep_tab()
         self._build_dm_tab()
+        self._build_mapping_tab()
         self._build_exclusion_tab()
         self.refresh_store_accounts_table()
         self.refresh_sales_reps_table()
@@ -3458,6 +3476,148 @@ class GFHApp(tk.Tk):
                 self.dm_phone_var.set(row.get("Phone", ""))
                 return
 
+    # ── Created By → Employee Mapping Tab ─────────────────────────────────
+    def _build_mapping_tab(self) -> None:
+        """Panel to map 'Created By' values from inventory count to
+        Employee names + phone numbers from the new Timesheet file.
+
+        This lets the audit correctly identify and WhatsApp the right
+        person when the count's Created By username (e.g. 'ArmanAli')
+        doesn't directly match the Timesheet Employee name
+        (e.g. 'Arman Ali Mohammed').
+        """
+        # ── Instructions ───────────────────────────────────────────────────
+        info = ttk.LabelFrame(self.mapping_tab, text="About This Panel", padding=8)
+        info.pack(fill="x", pady=(0, 8))
+        ttk.Label(info, wraplength=900, justify="left", text=(
+            "The Inventory Count file uses a short 'Created By' username (e.g. 'ArmanAli'), "
+            "while the Timesheet file uses the full 'Employee' name (e.g. 'Arman Ali Mohammed').\n"
+            "Add a mapping here so the audit can look up the correct employee (and their phone) "
+            "when sending WhatsApp reports.  Mappings are saved permanently in the database."
+        )).pack(anchor="w")
+
+        # ── Auto-populate from loaded data ─────────────────────────────────
+        auto_frame = ttk.Frame(self.mapping_tab)
+        auto_frame.pack(fill="x", pady=(0, 6))
+        ttk.Button(auto_frame, text="Auto-detect Created By values from loaded variances",
+                   command=self._mapping_auto_detect).pack(side="left", padx=(0, 8))
+        ttk.Button(auto_frame, text="Refresh Table",
+                   command=self._mapping_refresh).pack(side="left")
+
+        # ── Add / Edit form ────────────────────────────────────────────────
+        form = ttk.LabelFrame(self.mapping_tab, text="Add / Edit Mapping", padding=10)
+        form.pack(fill="x", pady=(0, 8))
+        form.columnconfigure(1, weight=1)
+        form.columnconfigure(3, weight=1)
+        form.columnconfigure(5, weight=1)
+
+        ttk.Label(form, text="Created By (from count file):").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.map_created_by_var = tk.StringVar()
+        ttk.Entry(form, textvariable=self.map_created_by_var, width=22).grid(row=0, column=1, sticky="ew", padx=(0, 16))
+
+        ttk.Label(form, text="Employee Name (from timesheet):").grid(row=0, column=2, sticky="w", padx=(0, 6))
+        self.map_employee_var = tk.StringVar()
+        ttk.Entry(form, textvariable=self.map_employee_var, width=28).grid(row=0, column=3, sticky="ew", padx=(0, 16))
+
+        ttk.Label(form, text="Phone (WhatsApp):").grid(row=0, column=4, sticky="w", padx=(0, 6))
+        self.map_phone_var = tk.StringVar()
+        ttk.Entry(form, textvariable=self.map_phone_var, width=18).grid(row=0, column=5, sticky="ew", padx=(0, 12))
+
+        btn_row = ttk.Frame(form)
+        btn_row.grid(row=1, column=0, columnspan=6, pady=(8, 0), sticky="w")
+        ttk.Button(btn_row, text="Save Mapping", command=self._mapping_save).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text="Delete Selected", command=self._mapping_delete).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text="Clear Form", command=self._mapping_clear_form).pack(side="left")
+
+        # ── Table ──────────────────────────────────────────────────────────
+        tbl_frame = ttk.LabelFrame(self.mapping_tab, text="Saved Mappings", padding=8)
+        tbl_frame.pack(fill="both", expand=True)
+        cols = ("created_by", "employee_name", "phone")
+        self.mapping_tree = ttk.Treeview(tbl_frame, columns=cols, show="headings", height=16)
+        self.mapping_tree.heading("created_by", text="Created By (count file)")
+        self.mapping_tree.heading("employee_name", text="Employee Name (timesheet)")
+        self.mapping_tree.heading("phone", text="Phone (WhatsApp)")
+        self.mapping_tree.column("created_by", width=200)
+        self.mapping_tree.column("employee_name", width=280)
+        self.mapping_tree.column("phone", width=160)
+        vsb = ttk.Scrollbar(tbl_frame, orient="vertical", command=self.mapping_tree.yview)
+        self.mapping_tree.configure(yscrollcommand=vsb.set)
+        self.mapping_tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+        self.mapping_tree.bind("<<TreeviewSelect>>", self._mapping_on_select)
+        self._mapping_refresh()
+
+    def _mapping_refresh(self) -> None:
+        for row in self.mapping_tree.get_children():
+            self.mapping_tree.delete(row)
+        for m in self.db.get_created_by_mappings():
+            self.mapping_tree.insert("", "end", values=(
+                m["created_by"], m["employee_name"], m["phone"]
+            ))
+
+    def _mapping_on_select(self, _event=None) -> None:
+        sel = self.mapping_tree.selection()
+        if not sel:
+            return
+        vals = self.mapping_tree.item(sel[0], "values")
+        if vals:
+            self.map_created_by_var.set(vals[0])
+            self.map_employee_var.set(vals[1])
+            self.map_phone_var.set(vals[2] if len(vals) > 2 else "")
+
+    def _mapping_save(self) -> None:
+        cb = self.map_created_by_var.get().strip()
+        em = self.map_employee_var.get().strip()
+        ph = self.map_phone_var.get().strip()
+        if not cb:
+            messagebox.showwarning("Missing Value", "Enter the 'Created By' value from the count file.")
+            return
+        self.db.upsert_created_by_mapping(cb, em, ph)
+        self._mapping_refresh()
+        self._mapping_clear_form()
+        self.set_status(f"Mapping saved: '{cb}' → '{em}'")
+
+    def _mapping_delete(self) -> None:
+        sel = self.mapping_tree.selection()
+        if not sel:
+            messagebox.showwarning("No Selection", "Select a row to delete.")
+            return
+        cb = self.mapping_tree.item(sel[0], "values")[0]
+        if messagebox.askyesno("Confirm Delete", f"Delete mapping for '{cb}'?"):
+            self.db.delete_created_by_mapping(cb)
+            self._mapping_refresh()
+            self.set_status(f"Deleted mapping for '{cb}'")
+
+    def _mapping_clear_form(self) -> None:
+        self.map_created_by_var.set("")
+        self.map_employee_var.set("")
+        self.map_phone_var.set("")
+
+    def _mapping_auto_detect(self) -> None:
+        """Scan all loaded variance rows for unique Created By values
+        and add any not already mapped (leaving employee/phone blank
+        for the user to fill in)."""
+        if not self.data_loaded:
+            messagebox.showwarning("No Data", "Load variances first, then auto-detect.")
+            return
+        existing = {m["created_by"] for m in self.db.get_created_by_mappings()}
+        added = 0
+        try:
+            with self.db.connect() as con:
+                rows = con.execute(
+                    "SELECT DISTINCT created_by FROM variances WHERE created_by IS NOT NULL AND created_by != ''"
+                ).fetchall()
+            for (cb,) in rows:
+                if cb and cb not in existing:
+                    self.db.upsert_created_by_mapping(cb, "", "")
+                    added += 1
+            self._mapping_refresh()
+            self.set_status(f"Auto-detected {added} new Created By value(s). Fill in Employee Name and Phone.")
+            if added == 0:
+                messagebox.showinfo("Auto-detect", "All Created By values already have mappings (or none found in loaded data).")
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
+
     def _build_exclusion_tab(self) -> None:
         form = ttk.LabelFrame(self.exclusion_tab, text="Exclude Devices From Variance Images", padding=10)
         form.pack(fill="x", pady=(0, 8))
@@ -3797,7 +3957,7 @@ class GFHApp(tk.Tk):
             self.inventory_path.set(path)
 
     def pick_time_sheet(self) -> None:
-        path = filedialog.askopenfilename(title="Select Employee_Time_Sheet", filetypes=[("Excel Files", "*.xlsx *.xlsm *.xls"), ("All Files", "*.*")])
+        path = filedialog.askopenfilename(title="Select Timesheet (timesheets_*.xlsx)", filetypes=[("Excel Files", "*.xlsx *.xlsm *.xls"), ("All Files", "*.*")])
         if path:
             self.time_sheet_path.set(path)
 
@@ -3812,7 +3972,7 @@ class GFHApp(tk.Tk):
             messagebox.showerror("Missing file", "Select Inventory_Count_Result_Details.xlsx first.")
             return
         if not time_sheet or not os.path.exists(time_sheet):
-            messagebox.showerror("Missing file", "Select Employee_Time_Sheet.xlsx first.")
+            messagebox.showerror("Missing file", "Select Timesheet file (timesheets_*.xlsx) first.")
             return
         try:
             self.clear_current_ui(silent=True)
@@ -4385,18 +4545,39 @@ class GFHApp(tk.Tk):
         return f"Inventory Audit Status as of {today.month}/{today.day}/{today.year}."
 
     def variance_request_message(self, rows: List[VarianceRow]) -> str:
+        """Build WhatsApp @mention message for variance request.
+
+        Timesheet Edition: also checks the Created By → Employee mapping table
+        to resolve phones directly from the 'Created By' field when the
+        timesheet-derived rep_name doesn't have a phone on file.
+        """
         seen_phones: set[str] = set()
         phones: List[str] = []
         missing_names: List[str] = []
 
         for row in rows:
             rep_name = safe_text(row.rep_name)
-            if not rep_name:
-                continue
+            created_by = safe_text(row.created_by)
+            phone = ""
 
-            phone = normalize_phone(self.db.find_sales_rep_phone(rep_name))
+            # 1. Try the Created By → Employee mapping table first
+            if created_by:
+                mapping = self.db.resolve_employee_for_created_by(created_by)
+                phone = normalize_phone(mapping.get("phone", ""))
+                if phone and not rep_name:
+                    rep_name = mapping.get("employee_name", created_by)
+
+            # 2. Fall back to the standard employee phone lookup by rep_name
+            if not phone and rep_name:
+                phone = normalize_phone(self.db.find_sales_rep_phone(rep_name))
+
+            # 3. If still nothing, try mapping by rep_name as the "created_by" key
+            if not phone and rep_name:
+                mapping = self.db.resolve_employee_for_created_by(rep_name)
+                phone = normalize_phone(mapping.get("phone", ""))
+
             if not phone:
-                missing_names.append(rep_name)
+                missing_names.append(rep_name or created_by or "Unknown")
                 continue
 
             if phone in seen_phones:
@@ -4408,8 +4589,9 @@ class GFHApp(tk.Tk):
         if missing_names:
             missing_unique = sorted(set(missing_names))
             self.set_status(
-                "No employee phone match found for: " + ", ".join(missing_unique[:5]) +
-                ("..." if len(missing_unique) > 5 else "")
+                "No phone found for: " + ", ".join(missing_unique[:5]) +
+                (f"... (and {len(missing_unique)-5} more)" if len(missing_unique) > 5 else "") +
+                " — add them in the 'Created By → Employee' tab."
             )
 
         if not phones:
