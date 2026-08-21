@@ -2459,13 +2459,22 @@ class GFHApp(tk.Tk):
         self.audit_checked_keys: set[str] = set()
 
         self.theme_manager = ThemeManager("GFH Inventory Audit", app_name="vidapay-gfh")
+        # Always start dark — override any saved light preference
+        self.theme_manager.current_theme = "dark"
         self._build_ui()
         self.set_status(f"Ready. Data folder: {APP_DIR}")
         self._start_db_sync_poll()
-        apply_theme_to_window(self, self.theme_manager)
-        # Re-assert brand button/tab styling (red, matching the sun/moon toggle) after
-        # the generic theme pass above.
+        # Apply dark colors to all widgets now that they exist
+        colors = self.theme_manager.get_colors()
+        self.COLOR_BG = colors["bg"]
+        self.COLOR_TEXT = colors["text"]
+        self.COLOR_CARD = colors.get("panel", colors["bg"])
+        self.COLOR_PANEL_ALT = colors.get("panel_alt", colors["bg"])
+        self.COLOR_INPUT = colors.get("input", colors.get("panel", "#ffffff"))
+        self.COLOR_BORDER = colors.get("border", "#334")
+        self.COLOR_MUTED = colors.get("text_dim", "#8090b0")
         self._apply_styles()
+        apply_theme_to_window(self, self.theme_manager)
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -2488,6 +2497,8 @@ class GFHApp(tk.Tk):
             self.minsize(min(960, max(640, sw // 2)),
                          min(580, max(480, sh // 2)))
             self.resizable(True, True)
+            # Always open maximized (issue: window was too small on first launch)
+            self.after(10, lambda: self.state("zoomed"))
         except Exception:
             pass
 
@@ -2569,15 +2580,18 @@ class GFHApp(tk.Tk):
         self.configure(bg=self.COLOR_BG)
         self._apply_styles()
 
-        # ── Copyright bar (bottom) ──
+        # ── Copyright bar (bottom) — dark navy always, centered, never theme-changed
         _cbar = tk.Frame(self, bg="#090d26", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
-        tk.Label(
+        _cbar._tag = "footer"
+        _clbl = tk.Label(
             _cbar,
-            text=f"Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.",
-            font=("Segoe UI", 8), fg="#9d9db8", bg="#090d26",
-        ).pack(side="left", padx=14, pady=3)
+            text=f"Developed by Abad Umair Channa | Copyright \u00a9 {date.today().year} | All rights reserved.",
+            font=("Segoe UI", 8), fg="#c7cbe0", bg="#090d26",
+        )
+        _clbl.place(relx=0.5, rely=0.5, anchor="center")
+        _clbl._tag = "footer"
 
 
         root = ttk.Frame(self, padding=14)
@@ -2595,13 +2609,21 @@ class GFHApp(tk.Tk):
                 size = (max(1, int(logo.width * scale)), max(1, int(logo.height * scale)))
                 logo = logo.resize(size)
                 self.header_logo_img = ImageTk.PhotoImage(logo)
-                tk.Label(header, image=self.header_logo_img, bg=self.COLOR_NAVY, bd=0).pack(side="left", padx=(0, 18))
+                _logo_lbl = tk.Label(header, image=self.header_logo_img, bg=self.COLOR_NAVY, bd=0)
+                _logo_lbl.pack(side="left", padx=(0, 0))
+                _logo_lbl._tag = "header"
             except Exception:
                 self.header_logo_img = None
 
+        # Red vertical divider between logo and title (GFH brand style)
+        _div = tk.Frame(header, bg=self.COLOR_RED, width=3)
+        _div.pack(side="left", fill="y", padx=(14, 14), pady=10)
+        _div._tag = "header"
+
         title_wrap = ttk.Frame(header, style="Brand.TFrame")
         title_wrap.pack(side="left", fill="x", expand=True)
-        ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel").pack(anchor="w")
+        _title_lbl = ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel", anchor="center")
+        _title_lbl.pack(fill="x")
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
@@ -2625,14 +2647,12 @@ class GFHApp(tk.Tk):
         self.store_tab = ttk.Frame(self.notebook, padding=10)
         self.rep_tab = ttk.Frame(self.notebook, padding=10)
         self.dm_tab = ttk.Frame(self.notebook, padding=10)
-        self.mapping_tab = ttk.Frame(self.notebook, padding=10)
         self.exclusion_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.status_tab, text="Inventory Audit Status")
         self.notebook.add(self.audit_tab, text="Variance Audit")
         self.notebook.add(self.store_tab, text="Store List")
         self.notebook.add(self.rep_tab, text="Employees")
         self.notebook.add(self.dm_tab, text="District DMs")
-        self.notebook.add(self.mapping_tab, text="Created By → Employee")
         self.notebook.add(self.exclusion_tab, text="Excluded Devices")
 
         self._build_status_tab()
@@ -2640,7 +2660,6 @@ class GFHApp(tk.Tk):
         self._build_store_tab()
         self._build_rep_tab()
         self._build_dm_tab()
-        self._build_mapping_tab()
         self._build_exclusion_tab()
         self.refresh_store_accounts_table()
         self.refresh_sales_reps_table()
@@ -2915,35 +2934,105 @@ class GFHApp(tk.Tk):
         self.store_tree.bind("<<TreeviewSelect>>", self.on_store_account_select)
 
     def _build_rep_tab(self) -> None:
-        form = ttk.LabelFrame(self.rep_tab, text="Add or Update Employee Phone", padding=10)
-        form.pack(fill="x", pady=(0, 8))
-        ttk.Label(form, text="Employee Name").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
-        ttk.Entry(form, textvariable=self.rep_name_var, width=32).grid(row=0, column=1, sticky="w", padx=(0, 12), pady=3)
-        ttk.Label(form, text="Phone Number").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=3)
-        ttk.Entry(form, textvariable=self.rep_phone_var, width=24).grid(row=0, column=3, sticky="w", padx=(0, 12), pady=3)
-        ttk.Button(form, text="Save Employee", command=self.save_sales_rep_from_form).grid(row=0, column=4, padx=(0, 6), pady=3)
-        ttk.Button(form, text="Import XLSX", command=self.import_employees_file).grid(row=0, column=5, padx=(0, 6), pady=3)
-        ttk.Button(form, text="Export Excel", command=self.export_employees_file).grid(row=0, column=6, padx=(0, 6), pady=3)
-        ttk.Button(form, text="Delete Selected", command=self.delete_selected_sales_rep).grid(row=0, column=7, padx=(0, 6), pady=3)
-        ttk.Button(form, text="Clear Form", command=self.clear_rep_form).grid(row=0, column=8, padx=(0, 6), pady=3)
+        # ── Info banner ────────────────────────────────────────────────────
+        info = ttk.LabelFrame(self.rep_tab, text="About Employees", padding=8)
+        info.pack(fill="x", pady=(0, 8))
+        ttk.Label(info, wraplength=1000, justify="left", text=(
+            "Store each employee's full name and phone number here so WhatsApp reports can tag them.\n"
+            "The 'Created By' field is optional — fill it in when the count file uses a short username "
+            "(e.g. 'ArmanAli') that differs from the full Employee Name. "
+            "The audit tries Created By first, then Employee Name, when resolving who to tag.\n"
+            "Use 'Auto-detect Created By' to scan loaded variances and pre-fill the column automatically."
+        )).pack(anchor="w")
 
-        # Search bar for Employees
+        # ── Add / Edit form ────────────────────────────────────────────────
+        form = ttk.LabelFrame(self.rep_tab, text="Add or Update Employee", padding=10)
+        form.pack(fill="x", pady=(0, 8))
+        for col in range(9):
+            form.columnconfigure(col, weight=0)
+        form.columnconfigure(1, weight=1)
+        form.columnconfigure(3, weight=1)
+        form.columnconfigure(5, weight=1)
+
+        ttk.Label(form, text="Employee Name:").grid(row=0, column=0, sticky="w", padx=(0, 4), pady=3)
+        ttk.Entry(form, textvariable=self.rep_name_var, width=26).grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=3)
+
+        ttk.Label(form, text="Phone:").grid(row=0, column=2, sticky="w", padx=(0, 4), pady=3)
+        ttk.Entry(form, textvariable=self.rep_phone_var, width=20).grid(row=0, column=3, sticky="ew", padx=(0, 10), pady=3)
+
+        ttk.Label(form, text="Created By (optional):").grid(row=0, column=4, sticky="w", padx=(0, 4), pady=3)
+        self.rep_created_by_var = tk.StringVar()
+        ttk.Entry(form, textvariable=self.rep_created_by_var, width=20).grid(row=0, column=5, sticky="ew", padx=(0, 10), pady=3)
+
+        btn_frame = ttk.Frame(form)
+        btn_frame.grid(row=1, column=0, columnspan=9, pady=(6, 0), sticky="w")
+        ttk.Button(btn_frame, text="Save Employee", command=self.save_sales_rep_from_form).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_frame, text="Auto-detect Created By", command=self._rep_auto_detect_created_by).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_frame, text="Import XLSX", command=self.import_employees_file).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_frame, text="Export Excel", command=self.export_employees_file).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_frame, text="Delete Selected", command=self.delete_selected_sales_rep).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_frame, text="Clear Form", command=self.clear_rep_form).pack(side="left")
+
+        # ── Search ─────────────────────────────────────────────────────────
         rep_search_box = ttk.Frame(self.rep_tab)
-        rep_search_box.pack(fill="x", pady=(0, 8))
+        rep_search_box.pack(fill="x", pady=(0, 6))
         ttk.Label(rep_search_box, text="Search:").pack(side="left", padx=(0, 6))
         rep_search_entry = ttk.Entry(rep_search_box, textvariable=self.rep_search_var, width=40)
         rep_search_entry.pack(side="left", padx=(0, 8))
         rep_search_entry.bind("<KeyRelease>", lambda _e: self.refresh_sales_reps_table())
-        ttk.Button(rep_search_box, text="Clear", command=lambda: (self.rep_search_var.set(""), self.refresh_sales_reps_table())).pack(side="left")
+        ttk.Button(rep_search_box, text="Clear",
+                   command=lambda: (self.rep_search_var.set(""), self.refresh_sales_reps_table())).pack(side="left")
 
-        columns = ("rep_name", "phone")
-        self.rep_tree = ttk.Treeview(self.rep_tab, columns=columns, show="headings", selectmode="browse", height=12)
-        self.rep_tree.heading("rep_name", text="Employee Name", command=lambda: self.sort_any_tree(self.rep_tree, "rep_name", False))
-        self.rep_tree.heading("phone", text="Phone Number", command=lambda: self.sort_any_tree(self.rep_tree, "phone", False))
-        self.rep_tree.column("rep_name", width=320, minwidth=120, anchor="w")
-        self.rep_tree.column("phone", width=220, minwidth=120, anchor="w")
-        self.rep_tree.pack(fill="both", expand=True)
+        # ── Table ──────────────────────────────────────────────────────────
+        columns = ("rep_name", "phone", "created_by")
+        self.rep_tree = ttk.Treeview(self.rep_tab, columns=columns, show="headings",
+                                     selectmode="browse", height=14)
+        self.rep_tree.heading("rep_name", text="Employee Name",
+                              command=lambda: self.sort_any_tree(self.rep_tree, "rep_name", False))
+        self.rep_tree.heading("phone", text="Phone Number",
+                              command=lambda: self.sort_any_tree(self.rep_tree, "phone", False))
+        self.rep_tree.heading("created_by", text="Created By (count username)",
+                              command=lambda: self.sort_any_tree(self.rep_tree, "created_by", False))
+        self.rep_tree.column("rep_name", width=280, minwidth=120, anchor="w")
+        self.rep_tree.column("phone", width=180, minwidth=100, anchor="w")
+        self.rep_tree.column("created_by", width=200, minwidth=100, anchor="w")
+        vsb = ttk.Scrollbar(self.rep_tab, orient="vertical", command=self.rep_tree.yview)
+        self.rep_tree.configure(yscrollcommand=vsb.set)
+        self.rep_tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
         self.rep_tree.bind("<<TreeviewSelect>>", self.on_sales_rep_select)
+
+    def _rep_auto_detect_created_by(self) -> None:
+        """Scan loaded variances for unique Created By values and pre-fill
+        rows that don't already have a Created By set."""
+        if not self.data_loaded:
+            messagebox.showwarning("No Data", "Load variances first, then auto-detect.")
+            return
+        try:
+            with self.db.connect() as con:
+                cb_rows = con.execute(
+                    "SELECT DISTINCT created_by FROM variances "
+                    "WHERE created_by IS NOT NULL AND created_by != ''"
+                ).fetchall()
+            added = 0
+            for (cb,) in cb_rows:
+                if not cb:
+                    continue
+                mapping = self.db.resolve_employee_for_created_by(cb)
+                if not mapping["employee_name"]:
+                    # Add a skeleton row so the user can fill in details
+                    self.db.upsert_created_by_mapping(cb, "", "")
+                    added += 1
+            self.refresh_sales_reps_table()
+            self.set_status(
+                f"Auto-detected {added} new Created By value(s). "
+                "Fill in Employee Name and Phone in the table."
+            )
+            if added == 0:
+                messagebox.showinfo("Auto-detect",
+                    "All Created By values already mapped, or no variances loaded.")
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
 
     def import_store_accounts_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -3187,13 +3276,29 @@ class GFHApp(tk.Tk):
         for item in self.rep_tree.get_children():
             self.rep_tree.delete(item)
         search = self.rep_search_var.get().strip().lower() if hasattr(self, "rep_search_var") else ""
+        # Show standard sales_reps rows
         for row in self.db.sales_reps():
             rep_name = row.get("Rep Name", "")
             phone = row.get("Phone", "")
+            created_by = ""
             if search and search not in rep_name.lower() and search not in phone.lower():
                 continue
             iid = row.get("RepKey", person_name_key(rep_name))
-            self.rep_tree.insert("", "end", iid=iid, values=(rep_name, phone))
+            self.rep_tree.insert("", "end", iid=iid, values=(rep_name, phone, created_by))
+        # Also show created_by mappings that don't have a matching sales_rep entry
+        existing_names = {row.get("Rep Name", "").lower() for row in self.db.sales_reps()}
+        for m in self.db.get_created_by_mappings():
+            if m["employee_name"].lower() in existing_names:
+                # Already shown above — just update its created_by column
+                for child in self.rep_tree.get_children():
+                    vals = self.rep_tree.item(child, "values")
+                    if vals and vals[0].lower() == m["employee_name"].lower():
+                        self.rep_tree.item(child, values=(vals[0], vals[1], m["created_by"]))
+                        break
+                continue
+            if search and search not in m["created_by"].lower() and search not in m["employee_name"].lower():
+                continue
+            self.rep_tree.insert("", "end", values=(m["employee_name"], m["phone"], m["created_by"]))
 
     def save_store_account_from_form(self) -> None:
         try:
@@ -3255,9 +3360,15 @@ class GFHApp(tk.Tk):
 
     def save_sales_rep_from_form(self) -> None:
         try:
-            self.db.save_sales_rep(self.rep_name_var.get(), self.rep_phone_var.get())
+            name = self.rep_name_var.get().strip()
+            phone = self.rep_phone_var.get().strip()
+            created_by = self.rep_created_by_var.get().strip() if hasattr(self, "rep_created_by_var") else ""
+            self.db.save_sales_rep(name, phone)
+            # Also save the created_by mapping if provided
+            if created_by:
+                self.db.upsert_created_by_mapping(created_by, name, phone)
             self.refresh_sales_reps_table()
-            self.set_status(f"Saved employee phone: {self.rep_name_var.get()} | {self.rep_phone_var.get()}")
+            self.set_status(f"Saved: {name} | {phone}" + (f" | Created By: {created_by}" if created_by else ""))
         except Exception as exc:
             messagebox.showerror("Save failed", str(exc))
 
@@ -3266,27 +3377,33 @@ class GFHApp(tk.Tk):
         if not selected:
             messagebox.showinfo("No selection", "Select an employee first.")
             return
-        if not messagebox.askyesno("Delete employee", "Delete the selected employee phone record from the database?"):
+        if not messagebox.askyesno("Delete employee", "Delete the selected employee record?"):
             return
+        vals = self.rep_tree.item(selected[0], "values")
         self.db.delete_sales_rep(selected[0])
+        # Also remove the created_by mapping if present
+        if vals and len(vals) >= 3 and vals[2]:
+            self.db.delete_created_by_mapping(vals[2])
         self.refresh_sales_reps_table()
         self.clear_rep_form()
-        self.set_status("Deleted selected employee from database.")
+        self.set_status("Deleted selected employee.")
 
     def clear_rep_form(self) -> None:
         self.rep_name_var.set("")
         self.rep_phone_var.set("")
+        if hasattr(self, "rep_created_by_var"):
+            self.rep_created_by_var.set("")
 
     def on_sales_rep_select(self, _event=None) -> None:
         selected = self.rep_tree.selection() if hasattr(self, "rep_tree") else []
         if not selected:
             return
-        rep_key = selected[0]
-        for row in self.db.sales_reps():
-            if row.get("RepKey") == rep_key:
-                self.rep_name_var.set(row.get("Rep Name", ""))
-                self.rep_phone_var.set(row.get("Phone", ""))
-                return
+        vals = self.rep_tree.item(selected[0], "values")
+        if vals:
+            self.rep_name_var.set(vals[0] if vals else "")
+            self.rep_phone_var.set(vals[1] if len(vals) > 1 else "")
+            if hasattr(self, "rep_created_by_var"):
+                self.rep_created_by_var.set(vals[2] if len(vals) > 2 else "")
 
     def _build_dm_tab(self) -> None:
         # WhatsApp send mode selector at top of tab
