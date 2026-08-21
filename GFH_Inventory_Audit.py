@@ -2444,13 +2444,22 @@ class GFHApp(tk.Tk):
         self.audit_checked_keys: set[str] = set()
 
         self.theme_manager = ThemeManager("GFH Inventory Audit", app_name="vidapay-gfh")
+        # Always start dark — override any saved light preference
+        self.theme_manager.current_theme = "dark"
         self._build_ui()
         self.set_status(f"Ready. Data folder: {APP_DIR}")
         self._start_db_sync_poll()
-        apply_theme_to_window(self, self.theme_manager)
-        # Re-assert brand button/tab styling (red, matching the sun/moon toggle) after
-        # the generic theme pass above.
+        # Apply dark colors to all widgets now that they exist
+        colors = self.theme_manager.get_colors()
+        self.COLOR_BG = colors["bg"]
+        self.COLOR_TEXT = colors["text"]
+        self.COLOR_CARD = colors.get("panel", colors["bg"])
+        self.COLOR_PANEL_ALT = colors.get("panel_alt", colors["bg"])
+        self.COLOR_INPUT = colors.get("input", colors.get("panel", "#ffffff"))
+        self.COLOR_BORDER = colors.get("border", "#334")
+        self.COLOR_MUTED = colors.get("text_dim", "#8090b0")
         self._apply_styles()
+        apply_theme_to_window(self, self.theme_manager)
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -2473,6 +2482,8 @@ class GFHApp(tk.Tk):
             self.minsize(min(960, max(640, sw // 2)),
                          min(580, max(480, sh // 2)))
             self.resizable(True, True)
+            # Always open maximized (issue: window was too small on first launch)
+            self.after(10, lambda: self.state("zoomed"))
         except Exception:
             pass
 
@@ -2554,15 +2565,18 @@ class GFHApp(tk.Tk):
         self.configure(bg=self.COLOR_BG)
         self._apply_styles()
 
-        # ── Copyright bar (bottom) ──
+        # ── Copyright bar (bottom) — dark navy always, centered, never theme-changed
         _cbar = tk.Frame(self, bg="#090d26", height=24)
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
-        tk.Label(
+        _cbar._tag = "footer"
+        _clbl = tk.Label(
             _cbar,
-            text=f"Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.",
-            font=("Segoe UI", 8), fg="#9d9db8", bg="#090d26",
-        ).pack(side="left", padx=14, pady=3)
+            text=f"Developed by Abad Umair Channa | Copyright \u00a9 {date.today().year} | All rights reserved.",
+            font=("Segoe UI", 8), fg="#c7cbe0", bg="#090d26",
+        )
+        _clbl.place(relx=0.5, rely=0.5, anchor="center")
+        _clbl._tag = "footer"
 
 
         root = ttk.Frame(self, padding=14)
@@ -2580,13 +2594,21 @@ class GFHApp(tk.Tk):
                 size = (max(1, int(logo.width * scale)), max(1, int(logo.height * scale)))
                 logo = logo.resize(size)
                 self.header_logo_img = ImageTk.PhotoImage(logo)
-                tk.Label(header, image=self.header_logo_img, bg=self.COLOR_NAVY, bd=0).pack(side="left", padx=(0, 18))
+                _logo_lbl = tk.Label(header, image=self.header_logo_img, bg=self.COLOR_NAVY, bd=0)
+                _logo_lbl.pack(side="left", padx=(0, 0))
+                _logo_lbl._tag = "header"
             except Exception:
                 self.header_logo_img = None
 
+        # Red vertical divider between logo and title (GFH brand style)
+        _div = tk.Frame(header, bg=self.COLOR_RED, width=3)
+        _div.pack(side="left", fill="y", padx=(14, 14), pady=10)
+        _div._tag = "header"
+
         title_wrap = ttk.Frame(header, style="Brand.TFrame")
         title_wrap.pack(side="left", fill="x", expand=True)
-        ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel").pack(anchor="w")
+        _title_lbl = ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel", anchor="center")
+        _title_lbl.pack(fill="x")
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
