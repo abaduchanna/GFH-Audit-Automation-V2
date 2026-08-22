@@ -2506,8 +2506,25 @@ class GFHApp(tk.Tk):
             foreground=[("pressed", "#FFFFFF"), ("active", "#FFFFFF")],
             bordercolor=[("active", self.COLOR_RED), ("pressed", self.COLOR_RED)],
         )
-        s.configure("TEntry", fieldbackground=self.COLOR_INPUT, foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
-        s.configure("TCombobox", fieldbackground=self.COLOR_INPUT, foreground=self.COLOR_TEXT, bordercolor=self.COLOR_BORDER)
+        s.configure("TEntry",
+                    fieldbackground=self.COLOR_INPUT,
+                    foreground=self.COLOR_TEXT,
+                    selectforeground="#ffffff",
+                    selectbackground=self.COLOR_RED,
+                    insertcolor=self.COLOR_TEXT,
+                    bordercolor=self.COLOR_BORDER)
+        s.configure("TCombobox",
+                    fieldbackground=self.COLOR_INPUT,
+                    foreground=self.COLOR_TEXT,
+                    selectforeground=self.COLOR_TEXT,
+                    selectbackground=self.COLOR_INPUT,
+                    bordercolor=self.COLOR_BORDER,
+                    arrowcolor=self.COLOR_TEXT)
+        s.map("TCombobox",
+              fieldbackground=[("readonly", self.COLOR_INPUT), ("disabled", self.COLOR_PANEL_ALT)],
+              foreground=[("readonly", self.COLOR_TEXT), ("disabled", self.COLOR_MUTED)],
+              selectforeground=[("readonly", self.COLOR_TEXT)],
+              selectbackground=[("readonly", self.COLOR_INPUT)])
         s.configure("TLabelframe", background=self.COLOR_BG, bordercolor=self.COLOR_BORDER, relief="solid")
         s.configure("TLabelframe.Label", background=self.COLOR_BG, foreground=self.COLOR_TEXT, font=("Segoe UI", sz(10), "bold"))
         s.configure("TNotebook", background=self.COLOR_BG, borderwidth=0)
@@ -2695,6 +2712,17 @@ class GFHApp(tk.Tk):
         # with theme-specific panel colors. Re-assert the brand button/tab styling right after
         # so every button and the selected tab keeps matching the red sun/moon toggle button.
         self._apply_styles()
+
+        # Force the Combobox popup listbox (which is a raw tk.Listbox, not themed by ttk)
+        # to match the current theme colors. Without this the popup stays white-on-white in dark mode.
+        try:
+            self.option_add("*TCombobox*Listbox.background", self.COLOR_INPUT)
+            self.option_add("*TCombobox*Listbox.foreground", self.COLOR_TEXT)
+            self.option_add("*TCombobox*Listbox.selectBackground", self.COLOR_RED)
+            self.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+            self.option_add("*TCombobox*Listbox.font", f"{{Segoe UI}} 10")
+        except Exception:
+            pass
 
         # The "status_completed" (default/no-status) row tag was set once at
         # startup using whatever COLOR_CARD was then — re-apply it now so
