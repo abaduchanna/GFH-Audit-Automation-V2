@@ -754,60 +754,72 @@ def read_xlsx_records(path: str | Path) -> List[Dict[str, str]]:
     return reader.read_sheet()
 
 
-def build_store_maps(time_sheet_records: List[Dict[str, str]]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
-    """Build district, display-name, and rep-name lookups from the Timesheet.
+def build_store_maps(
+    inventory_records: List[Dict[str, str]],
+    time_sheet_records: List[Dict[str, str]],
+) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """Build store lookups using Count Details as the source of truth.
 
-    Skips rows where Employee contains '— TOTAL' (subtotal rows injected
-    by the timesheet export). Matches by Store so that Created By from
-    the count file can be linked to the full Employee name at the same store.
+    - Store names and Districts come from Inventory_Count_Result_Details.
+    - Employee (rep) names come from the Timesheet by matching on Store.
+    - Timesheet is ONLY used to resolve who worked at each store.
     """
     district_by_store: Dict[str, str] = {}
-    display_by_store: Dict[str, str] = {}
-    rep_by_store: Dict[str, str] = {}        # norm_store → full Employee name
-    email_by_store: Dict[str, str] = {}      # norm_store → email (for future use)
-    latest_clock_by_store: Dict[str, float] = {}
+    display_by_store:  Dict[str, str] = {}
+    rep_by_store:      Dict[str, str] = {}   # norm_store → full Employee name
 
-    if not time_sheet_records:
+    # ── Step 1: Build store → employee map from Timesheet ─────────────────
+    ts_store_to_employee: Dict[str, str] = {}
+    if time_sheet_records:
+        sample_ts   = time_sheet_records[0]
+        ts_store_col = find_column(sample_ts, ["Store"])
+        ts_emp_col   = find_column(sample_ts, ["Employee", "Employee Name",
+                                               "Salesperson", "Sales Person", "Rep Name"])
+        ts_clock_col = find_column(sample_ts, ["Clock In", "Clock-In", "Date", "Work Date"])
+        latest_ts: Dict[str, float] = {}
+        for idx, rec in enumerate(time_sheet_records):
+            emp_raw = safe_text(rec.get(ts_emp_col, "")) if ts_emp_col else ""
+            # Skip TOTAL/subtotal rows
+            if not emp_raw or "TOTAL" in emp_raw.upper() or "\u2014 " in emp_raw or "-- " in emp_raw:
+                continue
+            store_raw = rec.get(ts_store_col, "") if ts_store_col else ""
+            norm = normalize_store(store_raw)
+            if not norm:
+                continue
+            score = numeric_excel_date(rec.get(ts_clock_col, "")) if ts_clock_col else float(idx)
+            if score >= latest_ts.get(norm, -1.0):
+                ts_store_to_employee[norm] = emp_raw.strip()
+                latest_ts[norm] = score
+
+    # ── Step 2: Build district/display maps from Count Details ────────────
+    if not inventory_records:
         return district_by_store, display_by_store, rep_by_store
 
-    sample = time_sheet_records[0]
-    store_col    = find_column(sample, ["Store"])
-    district_col = find_column(sample, ["District"])
-    rep_col      = find_column(sample, ["Employee", "Employee Name", "Salesperson", "Sales Person", "Rep Name"])
-    clock_in_col = find_column(sample, ["Clock In", "Clock-In", "Date", "Work Date", "Clock In "])
-    email_col    = find_column(sample, ["Email", "Email Address"])
+    sample_inv   = inventory_records[0]
+    inv_store_col    = find_column(sample_inv, ["Store"])
+    inv_district_col = find_column(sample_inv, ["District"])
 
-    if not store_col:
+    if not inv_store_col:
         return district_by_store, display_by_store, rep_by_store
 
-    for index, rec in enumerate(time_sheet_records):
-        # Skip TOTAL/subtotal rows — they have no Store and the Employee field
-        # ends with " — TOTAL" or "— TOTAL"
-        emp_raw = safe_text(rec.get(rep_col, "")) if rep_col else ""
-        if "TOTAL" in emp_raw.upper() or "— " in emp_raw:
-            continue
-
-        store_raw = rec.get(store_col, "")
+    for rec in inventory_records:
+        store_raw = rec.get(inv_store_col, "")
         norm = normalize_store(store_raw)
         if not norm:
             continue
 
+        # Store display name from count file
         display_by_store[norm] = display_store(store_raw)
 
-        if district_col:
-            district = normalize_district(rec.get(district_col, ""))
+        # District from count file
+        if inv_district_col:
+            district = normalize_district(rec.get(inv_district_col, ""))
             if district and district != "Unknown":
                 district_by_store[norm] = district
 
-        rep_name = emp_raw.strip()
-
-        if email_col:
-            email_by_store[norm] = safe_text(rec.get(email_col, ""))
-
-        date_score = numeric_excel_date(rec.get(clock_in_col, "")) if clock_in_col else float(index)
-        if rep_name and date_score >= latest_clock_by_store.get(norm, -1.0):
-            rep_by_store[norm] = rep_name
-            latest_clock_by_store[norm] = date_score
+        # Employee name from timesheet (matched by store)
+        if norm in ts_store_to_employee and norm not in rep_by_store:
+            rep_by_store[norm] = ts_store_to_employee[norm]
 
     return district_by_store, display_by_store, rep_by_store
 
@@ -908,7 +920,7 @@ def extract_variances(
     if not inventory_records:
         return [], {"completed": 0, "pending": 0, "stores_total": 0, "skipped_sims": 0, "raw_inventory_rows": 0, "latest_inventory_rows": 0, "stale_inventory_rows": 0, "latest_created_by_groups": 0}
 
-    district_by_store, display_by_store, rep_by_store = build_store_maps(time_sheet_records)
+    district_by_store, display_by_store, rep_by_store = build_store_maps(inventory_records, time_sheet_records)
     for rec in master_store_records or []:
         district = normalize_district(rec.get("District", ""))
         store = display_store(rec.get("Store", ""))
@@ -1031,7 +1043,7 @@ def build_inventory_status_rows(
     master_store_records: Optional[List[Dict[str, str]]] = None,
     source_file: str = "",
 ) -> Tuple[List[InventoryStatusRow], Dict[str, int]]:
-    district_by_store, display_by_store, rep_by_store = build_store_maps(time_sheet_records)
+    district_by_store, display_by_store, rep_by_store = build_store_maps(inventory_records, time_sheet_records)
     master_display_by_store: Dict[str, str] = dict(display_by_store)
     inv_display_by_store: Dict[str, str] = {}
     completed_store_norms: set[str] = set()
