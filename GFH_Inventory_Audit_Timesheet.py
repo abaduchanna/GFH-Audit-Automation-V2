@@ -769,24 +769,30 @@ def build_store_maps(
     rep_by_store:      Dict[str, str] = {}   # norm_store → full Employee name
 
     # ── Step 1: Build store → employee map from Timesheet ─────────────────
+    # Only use rows where Clock In is present — a row without a clock-in
+    # means the employee was scheduled but didn't actually work that day.
     ts_store_to_employee: Dict[str, str] = {}
     if time_sheet_records:
-        sample_ts   = time_sheet_records[0]
+        sample_ts    = time_sheet_records[0]
         ts_store_col = find_column(sample_ts, ["Store"])
         ts_emp_col   = find_column(sample_ts, ["Employee", "Employee Name",
                                                "Salesperson", "Sales Person", "Rep Name"])
-        ts_clock_col = find_column(sample_ts, ["Clock In", "Clock-In", "Date", "Work Date"])
+        ts_clock_col = find_column(sample_ts, ["Clock In", "Clock-In", "Clock In "])
         latest_ts: Dict[str, float] = {}
         for idx, rec in enumerate(time_sheet_records):
             emp_raw = safe_text(rec.get(ts_emp_col, "")) if ts_emp_col else ""
             # Skip TOTAL/subtotal rows
             if not emp_raw or "TOTAL" in emp_raw.upper() or "\u2014 " in emp_raw or "-- " in emp_raw:
                 continue
+            # Skip rows with no Clock In — employee didn't actually work
+            clock_in_val = safe_text(rec.get(ts_clock_col, "")) if ts_clock_col else ""
+            if not clock_in_val or clock_in_val.strip() == "":
+                continue
             store_raw = rec.get(ts_store_col, "") if ts_store_col else ""
             norm = normalize_store(store_raw)
             if not norm:
                 continue
-            score = numeric_excel_date(rec.get(ts_clock_col, "")) if ts_clock_col else float(idx)
+            score = numeric_excel_date(clock_in_val)
             if score >= latest_ts.get(norm, -1.0):
                 ts_store_to_employee[norm] = emp_raw.strip()
                 latest_ts[norm] = score
@@ -2680,39 +2686,34 @@ class GFHApp(tk.Tk):
         root = ttk.Frame(self, padding=14)
         root.pack(fill="both", expand=True)
 
-        header = ttk.Frame(root, style="Brand.TFrame", padding=(18, 14))
-        header._tag = "header"
+        header = tk.Frame(self, bg=self.COLOR_NAVY, height=90)
         header.pack(fill="x")
+        header.pack_propagate(False)
+        header._tag = "header"
 
         self.header_logo_img = None
         if HEADER_LOGO_PATH.exists() and Image is not None and ImageTk is not None:
             try:
                 logo = Image.open(HEADER_LOGO_PATH).convert("RGBA")
-                scale = min(560 / logo.width, 116 / logo.height)
+                scale = min(190 / logo.width, 72 / logo.height)
                 size = (max(1, int(logo.width * scale)), max(1, int(logo.height * scale)))
-                logo = logo.resize(size)
+                logo = logo.resize(size, Image.LANCZOS if hasattr(Image, "LANCZOS") else Image.ANTIALIAS)
                 self.header_logo_img = ImageTk.PhotoImage(logo)
-                _logo_lbl = tk.Label(header, image=self.header_logo_img, bg=self.COLOR_NAVY, bd=0)
-                _logo_lbl.grid(row=0, column=0, padx=(0, 0), pady=6, sticky="w")
+                _logo_lbl = tk.Label(header, image=self.header_logo_img, bg=self.COLOR_NAVY, bd=0,
+                                     highlightthickness=0)
+                _logo_lbl.pack(side="left", padx=(18, 0), pady=9)
                 _logo_lbl._tag = "header"
             except Exception:
                 self.header_logo_img = None
 
         # Red vertical divider
         _div = tk.Frame(header, bg=self.COLOR_RED, width=3)
-        _div.grid(row=0, column=1, sticky="ns", padx=(14, 14), pady=10)
+        _div.pack(side="left", fill="y", padx=(14, 0), pady=12)
         _div._tag = "header"
 
-        # Title — column 2, expand=True centers it across remaining space
-        title_wrap = ttk.Frame(header, style="Brand.TFrame")
-        title_wrap.grid(row=0, column=2, sticky="nsew")
-        _title_lbl = ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel", anchor="center")
-        _title_lbl.place(relx=0.5, rely=0.5, anchor="center")
-        title_wrap.update_idletasks()
-
-        # Theme toggle — column 3, fixed right
+        # Theme toggle — fixed right before title so title can center in remaining space
         _tog_frame = tk.Frame(header, bg=self.COLOR_NAVY)
-        _tog_frame.grid(row=0, column=3, padx=(0, 14), pady=6, sticky="e")
+        _tog_frame.pack(side="right", padx=(0, 18), pady=9)
         _tog_frame._tag = "header"
         self._theme_btn = tk.Button(
             _tog_frame, text="🌙" if self.theme_manager.current_theme == "dark" else "☀️",
@@ -2725,8 +2726,17 @@ class GFHApp(tk.Tk):
         self._theme_btn.pack()
         self._theme_btn._tag = "header"
 
-        # Grid weights: col 2 (title) gets all the expand space
-        header.columnconfigure(2, weight=1)
+        # Title — fills remaining space between divider and toggle, truly centered
+        title_wrap = tk.Frame(header, bg=self.COLOR_NAVY)
+        title_wrap.pack(side="left", fill="both", expand=True)
+        title_wrap._tag = "header"
+        _title_lbl = tk.Label(
+            title_wrap, text=APP_NAME,
+            font=("Segoe UI", 18, "bold"), fg="#ffffff", bg=self.COLOR_NAVY,
+            anchor="center"
+        )
+        _title_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        _title_lbl._tag = "header"
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
