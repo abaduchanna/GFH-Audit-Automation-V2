@@ -755,40 +755,54 @@ def read_xlsx_records(path: str | Path) -> List[Dict[str, str]]:
 
 
 def build_store_maps(time_sheet_records: List[Dict[str, str]]) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
-    """Build district, display-name, and rep-name lookups from the Employee Time Sheet."""
+    """Build district, display-name, and rep-name lookups from the Timesheet.
+
+    Skips rows where Employee contains '— TOTAL' (subtotal rows injected
+    by the timesheet export). Matches by Store so that Created By from
+    the count file can be linked to the full Employee name at the same store.
+    """
     district_by_store: Dict[str, str] = {}
     display_by_store: Dict[str, str] = {}
-    rep_by_store: Dict[str, str] = {}
+    rep_by_store: Dict[str, str] = {}        # norm_store → full Employee name
+    email_by_store: Dict[str, str] = {}      # norm_store → email (for future use)
     latest_clock_by_store: Dict[str, float] = {}
 
     if not time_sheet_records:
         return district_by_store, display_by_store, rep_by_store
 
     sample = time_sheet_records[0]
-    store_col = find_column(sample, ["Store"])
+    store_col    = find_column(sample, ["Store"])
     district_col = find_column(sample, ["District"])
-    rep_col = find_column(sample, ["Employee", "Employee Name", "Salesperson", "Sales Person", "Rep Name"])
+    rep_col      = find_column(sample, ["Employee", "Employee Name", "Salesperson", "Sales Person", "Rep Name"])
     clock_in_col = find_column(sample, ["Clock In", "Clock-In", "Date", "Work Date", "Clock In "])
-    user_login_col = find_column(sample, ["User Login", "Username", "Login"])
+    email_col    = find_column(sample, ["Email", "Email Address"])
 
     if not store_col:
         return district_by_store, display_by_store, rep_by_store
 
     for index, rec in enumerate(time_sheet_records):
+        # Skip TOTAL/subtotal rows — they have no Store and the Employee field
+        # ends with " — TOTAL" or "— TOTAL"
+        emp_raw = safe_text(rec.get(rep_col, "")) if rep_col else ""
+        if "TOTAL" in emp_raw.upper() or "— " in emp_raw:
+            continue
+
         store_raw = rec.get(store_col, "")
         norm = normalize_store(store_raw)
         if not norm:
             continue
 
         display_by_store[norm] = display_store(store_raw)
+
         if district_col:
             district = normalize_district(rec.get(district_col, ""))
             if district and district != "Unknown":
                 district_by_store[norm] = district
 
-        rep_name = safe_text(rec.get(rep_col, "")) if rep_col else ""
-        if not rep_name and user_login_col:
-            rep_name = safe_text(rec.get(user_login_col, ""))
+        rep_name = emp_raw.strip()
+
+        if email_col:
+            email_by_store[norm] = safe_text(rec.get(email_col, ""))
 
         date_score = numeric_excel_date(rec.get(clock_in_col, "")) if clock_in_col else float(index)
         if rep_name and date_score >= latest_clock_by_store.get(norm, -1.0):
@@ -1762,6 +1776,42 @@ class VarianceDatabase:
                 return row["Phone"]
         return ""
 
+    def resolve_phone_for_rep(self, rep_name: str, created_by: str = "") -> str:
+        """Timesheet-aware phone resolver.
+
+        Resolution order:
+        1. created_by_mappings by created_by username (most direct — user set this)
+        2. created_by_mappings by employee_name (in case rep_name matches)
+        3. sales_reps table by rep_name (standard lookup)
+        4. created_by as a loose sales_reps key (last resort)
+        """
+        # 1. Created By mapping by username
+        if created_by:
+            cb = created_by.strip()
+            mapping = self.resolve_employee_for_created_by(cb)
+            if mapping.get("phone"):
+                return mapping["phone"]
+
+        # 2. Created By mapping by employee_name match
+        if rep_name:
+            rn_lower = rep_name.strip().lower()
+            for m in self.get_created_by_mappings():
+                if m.get("employee_name", "").strip().lower() == rn_lower and m.get("phone"):
+                    return m["phone"]
+
+        # 3. Standard sales_reps lookup
+        phone = self.find_sales_rep_phone(rep_name)
+        if phone:
+            return phone
+
+        # 4. Try created_by as a name in sales_reps
+        if created_by:
+            phone = self.find_sales_rep_phone(created_by)
+            if phone:
+                return phone
+
+        return ""
+
     def update_device_exclusion_comment(self, rule_key: str, comments: str) -> None:
         with self.connect() as con:
             con.execute(
@@ -2583,16 +2633,20 @@ class GFHApp(tk.Tk):
         except Exception:
             pass
 
-        self.COLOR_NAVY = "#090d26"   # matches theme_manager.py navy — header blends with logo
-        self.COLOR_RED = "#f0541c"
-        self.COLOR_BG = "#F3F5FA"
-        self.COLOR_CARD = "#FFFFFF"
-        self.COLOR_TEXT = "#090d26"
-        self.COLOR_MUTED = "#5F6678"
-        self.COLOR_BORDER = "#D9DEEA"
-        self.COLOR_INPUT = "#FFFFFF"
-        self.COLOR_PANEL_ALT = "#eef0f6"
-        self.COLOR_SUCCESS = "#17A65B"
+        # Pull colors from the already-set dark theme so every widget
+        # built from here on gets dark colors baked in — not the light
+        # defaults that were previously hardcoded here.
+        _c = self.theme_manager.get_colors()
+        self.COLOR_NAVY     = "#090d26"
+        self.COLOR_RED      = "#f0541c"
+        self.COLOR_BG       = _c["bg"]
+        self.COLOR_CARD     = _c.get("panel",     _c["bg"])
+        self.COLOR_TEXT     = _c["text"]
+        self.COLOR_MUTED    = _c.get("text_dim",  "#8090b0")
+        self.COLOR_BORDER   = _c.get("border",    "#334466")
+        self.COLOR_INPUT    = _c.get("input",     _c.get("panel", "#1c2447"))
+        self.COLOR_PANEL_ALT= _c.get("panel_alt", "#1c2447")
+        self.COLOR_SUCCESS  = "#17A65B"
 
         self.configure(bg=self.COLOR_BG)
         self._apply_styles()
@@ -2627,20 +2681,40 @@ class GFHApp(tk.Tk):
                 logo = logo.resize(size)
                 self.header_logo_img = ImageTk.PhotoImage(logo)
                 _logo_lbl = tk.Label(header, image=self.header_logo_img, bg=self.COLOR_NAVY, bd=0)
-                _logo_lbl.pack(side="left", padx=(0, 0))
+                _logo_lbl.grid(row=0, column=0, padx=(0, 0), pady=6, sticky="w")
                 _logo_lbl._tag = "header"
             except Exception:
                 self.header_logo_img = None
 
-        # Red vertical divider between logo and title (GFH brand style)
+        # Red vertical divider
         _div = tk.Frame(header, bg=self.COLOR_RED, width=3)
-        _div.pack(side="left", fill="y", padx=(14, 14), pady=10)
+        _div.grid(row=0, column=1, sticky="ns", padx=(14, 14), pady=10)
         _div._tag = "header"
 
+        # Title — column 2, expand=True centers it across remaining space
         title_wrap = ttk.Frame(header, style="Brand.TFrame")
-        title_wrap.pack(side="left", fill="x", expand=True)
+        title_wrap.grid(row=0, column=2, sticky="nsew")
         _title_lbl = ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel", anchor="center")
-        _title_lbl.pack(fill="x")
+        _title_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        title_wrap.update_idletasks()
+
+        # Theme toggle — column 3, fixed right
+        _tog_frame = tk.Frame(header, bg=self.COLOR_NAVY)
+        _tog_frame.grid(row=0, column=3, padx=(0, 14), pady=6, sticky="e")
+        _tog_frame._tag = "header"
+        self._theme_btn = tk.Button(
+            _tog_frame, text="🌙" if self.theme_manager.current_theme == "dark" else "☀️",
+            bg=self.COLOR_RED, fg="white",
+            activebackground="#c9401a", activeforeground="white",
+            font=("Segoe UI", 10), width=3, relief="flat",
+            highlightthickness=0, borderwidth=0,
+            command=self._toggle_theme
+        )
+        self._theme_btn.pack()
+        self._theme_btn._tag = "header"
+
+        # Grid weights: col 2 (title) gets all the expand space
+        header.columnconfigure(2, weight=1)
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
@@ -2687,8 +2761,18 @@ class GFHApp(tk.Tk):
         status_bar = ttk.Label(root, textvariable=self.status_text, anchor="w", relief="sunken", padding=6, foreground=self.COLOR_NAVY, background="#E9ECF5")
         status_bar.pack(fill="x", pady=(8, 0))
 
-        theme_btn = self.theme_manager.create_theme_toggle_button(header, callback=self._apply_theme)
-        theme_btn.pack(side="right")
+        # Theme toggle is now built directly in the header grid above (_theme_btn).
+        # The old theme_manager.create_theme_toggle_button call has been removed
+        # to avoid a second button appearing outside the header.
+
+    def _toggle_theme(self) -> None:
+        """Toggle between dark and light theme."""
+        new_theme = "light" if self.theme_manager.current_theme == "dark" else "dark"
+        self.theme_manager.current_theme = new_theme
+        self.theme_manager.save_theme(new_theme)
+        if hasattr(self, "_theme_btn"):
+            self._theme_btn.configure(text="🌙" if new_theme == "dark" else "☀️")
+        self._apply_theme()
 
     def _apply_theme(self, colors=None):
         """Apply theme colors to all widgets.
@@ -2798,9 +2882,9 @@ class GFHApp(tk.Tk):
             self.status_tree.heading(col, text=headings[col], command=lambda c=col: self.sort_any_tree(self.status_tree, c, False))
             self.status_tree.column(col, width=widths[col], minwidth=80, anchor="w")
         self.status_tree.column("checkbox", anchor="center")
-        self.status_tree.tag_configure("status_pending", background="#FFF3CD")
-        self.status_tree.tag_configure("status_completed_after_update", background="#D7ECFF")
-        self.status_tree.tag_configure("status_completed_sent", background="#D9F7DF")
+        self.status_tree.tag_configure("status_pending", background="#FFF3CD", foreground="#111827")
+        self.status_tree.tag_configure("status_completed_after_update", background="#D7ECFF", foreground="#111827")
+        self.status_tree.tag_configure("status_completed_sent", background="#D9F7DF", foreground="#111827")
         # "status_completed" (no special status yet) is meant to look like a normal,
         # un-highlighted row — it should track the current theme's card/list
         # background, not stay hardcoded white. It's re-applied in _apply_theme()
@@ -2900,9 +2984,9 @@ class GFHApp(tk.Tk):
             self.audit_tree.heading(col, text=headings[col], command=lambda c=col: self.sort_any_tree(self.audit_tree, c, False))
             self.audit_tree.column(col, width=widths[col], minwidth=80, anchor="w")
         self.audit_tree.column("checkbox", anchor="center")
-        self.audit_tree.tag_configure("variance_pending", background="#FFF3CD")
-        self.audit_tree.tag_configure("variance_sent", background="#D7ECFF")
-        self.audit_tree.tag_configure("variance_cleared", background="#D9F7DF")
+        self.audit_tree.tag_configure("variance_pending", background="#FFF3CD", foreground="#111827")
+        self.audit_tree.tag_configure("variance_sent", background="#D7ECFF", foreground="#111827")
+        self.audit_tree.tag_configure("variance_cleared", background="#D9F7DF", foreground="#111827")
         ttk.Label(
             self.audit_tab,
             text="Colors: Yellow = Pending variance, Blue = Sent to WhatsApp, Green = Cleared.",
@@ -3029,56 +3113,91 @@ class GFHApp(tk.Tk):
         self.rep_tree.bind("<<TreeviewSelect>>", self.on_sales_rep_select)
 
     def _rep_auto_detect_created_by(self) -> None:
-        """Scan loaded data for unique Created By values (both in-memory
-        records and the DB) and add any not yet in the Employees table."""
-        cb_values: set = set()
+        """Match 'Created By' usernames from the count file to full Employee
+        names from the timesheet by finding who worked at the same Store.
 
-        # Source 1: in-memory inventory records loaded this session
-        for rec in getattr(self, "current_inventory_records", []):
-            cb = safe_text(rec.get("Created By", "")).strip()
-            if cb:
-                cb_values.add(cb)
+        Example: Count file has 'BabarAli' at 'Mt View Store'.
+                 Timesheet has 'Babar Ali' at 'Mt View Store'.
+                 → auto-maps 'BabarAli' → 'Babar Ali'.
+        """
+        inv_records = getattr(self, "current_inventory_records", [])
+        ts_records  = getattr(self, "current_time_sheet_records", [])
 
-        # Source 2: DB variances table (previous sessions)
-        try:
-            with self.db.connect() as con:
-                rows = con.execute(
-                    "SELECT DISTINCT created_by FROM variances "
-                    "WHERE created_by IS NOT NULL AND created_by != '' "
-                    "AND created_by != '__unknown_created_by__'"
-                ).fetchall()
-            for (cb,) in rows:
-                if cb:
-                    cb_values.add(cb)
-        except Exception:
-            pass
-
-        if not cb_values:
-            messagebox.showinfo(
-                "No Created By Values",
-                "No 'Created By' values found.\n\n"
-                "Load an Inventory Count file first "
-                "(Upload Files section → Load Variances)."
-            )
+        if not inv_records:
+            messagebox.showinfo("No Data", "Load an Inventory Count file first (Load Variances).")
             return
 
-        existing = {m["created_by"] for m in self.db.get_created_by_mappings()}
-        added = 0
-        for cb in sorted(cb_values):
-            if cb not in existing:
-                self.db.upsert_created_by_mapping(cb, "", "")
+        # Build store → employee map from timesheet
+        sample_ts = ts_records[0] if ts_records else {}
+        store_col_ts  = find_column(sample_ts, ["Store"])
+        emp_col_ts    = find_column(sample_ts, ["Employee", "Employee Name"])
+        email_col_ts  = find_column(sample_ts, ["Email", "Email Address"])
+
+        store_to_employee: Dict[str, str] = {}  # norm_store → full employee name
+        store_to_email:    Dict[str, str] = {}
+
+        for rec in ts_records:
+            emp_raw = safe_text(rec.get(emp_col_ts, "")) if emp_col_ts else ""
+            if not emp_raw or "TOTAL" in emp_raw.upper() or "— " in emp_raw:
+                continue
+            store_raw = rec.get(store_col_ts, "") if store_col_ts else ""
+            norm = normalize_store(store_raw)
+            if norm:
+                store_to_employee[norm] = emp_raw.strip()
+                if email_col_ts:
+                    store_to_email[norm] = safe_text(rec.get(email_col_ts, ""))
+
+        # Build store → created_by map from count file
+        sample_inv = inv_records[0] if inv_records else {}
+        store_col_inv = find_column(sample_inv, ["Store"])
+        cb_col        = find_column(sample_inv, ["Created By", "Count By", "User Login"])
+
+        store_to_created_by: Dict[str, str] = {}
+        for rec in inv_records:
+            store_raw = rec.get(store_col_inv, "") if store_col_inv else ""
+            norm = normalize_store(store_raw)
+            cb   = safe_text(rec.get(cb_col, "")).strip() if cb_col else ""
+            if norm and cb:
+                store_to_created_by[norm] = cb
+
+        # Match: same store = same person
+        existing = {m["created_by"]: m for m in self.db.get_created_by_mappings()}
+        added = updated = 0
+
+        for norm_store, cb in store_to_created_by.items():
+            emp_name = store_to_employee.get(norm_store, "")
+            email    = store_to_email.get(norm_store, "")
+            if cb in existing:
+                # Update employee name if now known and not already set
+                if emp_name and not existing[cb]["employee_name"]:
+                    self.db.upsert_created_by_mapping(cb, emp_name, existing[cb]["phone"])
+                    updated += 1
+            else:
+                self.db.upsert_created_by_mapping(cb, emp_name, "")
                 added += 1
 
         self.refresh_sales_reps_table()
-        self.set_status(
-            f"Found {len(cb_values)} Created By value(s). "
-            f"{added} new row(s) added — fill in Employee Name and Phone."
-        )
+
+        if added + updated == 0 and not store_to_created_by:
+            messagebox.showinfo("Auto-detect", "No 'Created By' values found in the count file.")
+            return
+
+        msg = []
+        if added:   msg.append(f"{added} new mapping(s) added")
+        if updated: msg.append(f"{updated} mapping(s) updated with employee name")
+
+        summary_lines = []
+        for norm_store, cb in sorted(store_to_created_by.items()):
+            emp = store_to_employee.get(norm_store, "— not found in timesheet")
+            summary_lines.append(f"  {cb}  →  {emp}  ({display_store(norm_store)})")
+
+        self.set_status(f"Auto-detect: {', '.join(msg) if msg else 'all already mapped'}.")
         messagebox.showinfo(
             "Auto-detect Complete",
-            f"Found {len(cb_values)} unique Created By value(s).\n"
-            f"{added} new row(s) added to the Employees table.\n\n"
-            "Fill in Employee Name and WhatsApp phone for each row, then Save Employee."
+            (f"{', '.join(msg)}.\n\n" if msg else "All already mapped.\n\n") +
+            "Matches found:\n" + "\n".join(summary_lines[:20]) +
+            ("\n..." if len(summary_lines) > 20 else "") +
+            "\n\nFill in Phone numbers in the Employees tab, then Save."
         )
 
     def import_store_accounts_file(self) -> None:
@@ -4711,58 +4830,41 @@ class GFHApp(tk.Tk):
     def variance_request_message(self, rows: List[VarianceRow]) -> str:
         """Build WhatsApp @mention message for variance request.
 
-        Timesheet Edition: also checks the Created By → Employee mapping table
-        to resolve phones directly from the 'Created By' field when the
-        timesheet-derived rep_name doesn't have a phone on file.
+        Uses resolve_phone_for_rep() which tries:
+        1. created_by_mappings by 'Created By' username (ArmanAli → phone)
+        2. created_by_mappings by employee_name (Abdullah Hussain → phone)
+        3. sales_reps table by rep_name
         """
         seen_phones: set[str] = set()
         phones: List[str] = []
-        missing_names: List[str] = []
+        missing: List[str] = []
 
         for row in rows:
             rep_name = safe_text(row.rep_name)
             created_by = safe_text(row.created_by)
-            phone = ""
-
-            # 1. Try the Created By → Employee mapping table first
-            if created_by:
-                mapping = self.db.resolve_employee_for_created_by(created_by)
-                phone = normalize_phone(mapping.get("phone", ""))
-                if phone and not rep_name:
-                    rep_name = mapping.get("employee_name", created_by)
-
-            # 2. Fall back to the standard employee phone lookup by rep_name
-            if not phone and rep_name:
-                phone = normalize_phone(self.db.find_sales_rep_phone(rep_name))
-
-            # 3. If still nothing, try mapping by rep_name as the "created_by" key
-            if not phone and rep_name:
-                mapping = self.db.resolve_employee_for_created_by(rep_name)
-                phone = normalize_phone(mapping.get("phone", ""))
-
+            phone = normalize_phone(
+                self.db.resolve_phone_for_rep(rep_name, created_by)
+            )
             if not phone:
-                missing_names.append(rep_name or created_by or "Unknown")
+                missing.append(created_by or rep_name or "Unknown")
                 continue
-
             if phone in seen_phones:
                 continue
-
             seen_phones.add(phone)
             phones.append(whatsapp_mention(phone))
 
-        if missing_names:
-            missing_unique = sorted(set(missing_names))
+        if missing:
+            unique_missing = sorted(set(missing))
             self.set_status(
-                "No phone found for: " + ", ".join(missing_unique[:5]) +
-                (f"... (and {len(missing_unique)-5} more)" if len(missing_unique) > 5 else "") +
-                " — add them in the 'Created By → Employee' tab."
+                "No phone found for: " + ", ".join(unique_missing[:5]) +
+                (f"... (+{len(unique_missing)-5} more)" if len(unique_missing) > 5 else "") +
+                " — add phone in the Employees tab (Created By column)."
             )
 
         if not phones:
             return ""
 
         return " ".join(phones) + " please share the images of the variances."
-
 
     def pending_inventory_count_message(self, rows: List[InventoryStatusRow]) -> str:
         messages: List[str] = []
@@ -4773,7 +4875,10 @@ class GFHApp(tk.Tk):
                 continue
 
             rep_name = safe_text(row.rep_name)
-            phone = normalize_phone(self.db.find_sales_rep_phone(rep_name)) if rep_name else ""
+            # InventoryStatusRow doesn't carry created_by, but rep_name here
+            # comes from build_store_maps → timesheet Employee column, so
+            # resolve_phone_for_rep will match it against both tables.
+            phone = normalize_phone(self.db.resolve_phone_for_rep(rep_name))
             if phone:
                 target = whatsapp_mention(phone)
             else:
