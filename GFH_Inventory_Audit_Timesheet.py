@@ -2683,9 +2683,6 @@ class GFHApp(tk.Tk):
         _clbl._tag = "footer"
 
 
-        root = ttk.Frame(self, padding=14)
-        root.pack(fill="both", expand=True)
-
         header = tk.Frame(self, bg=self.COLOR_NAVY, height=90)
         header.pack(fill="x")
         header.pack_propagate(False)
@@ -2711,7 +2708,7 @@ class GFHApp(tk.Tk):
         _div.pack(side="left", fill="y", padx=(14, 0), pady=12)
         _div._tag = "header"
 
-        # Theme toggle — fixed right before title so title can center in remaining space
+        # Theme toggle — pack RIGHT first so title can center in remaining space
         _tog_frame = tk.Frame(header, bg=self.COLOR_NAVY)
         _tog_frame.pack(side="right", padx=(0, 18), pady=9)
         _tog_frame._tag = "header"
@@ -2726,7 +2723,7 @@ class GFHApp(tk.Tk):
         self._theme_btn.pack()
         self._theme_btn._tag = "header"
 
-        # Title — fills remaining space between divider and toggle, truly centered
+        # Title — fills remaining space, truly centered
         title_wrap = tk.Frame(header, bg=self.COLOR_NAVY)
         title_wrap.pack(side="left", fill="both", expand=True)
         title_wrap._tag = "header"
@@ -2737,6 +2734,9 @@ class GFHApp(tk.Tk):
         )
         _title_lbl.place(relx=0.5, rely=0.5, anchor="center")
         _title_lbl._tag = "header"
+
+        root = ttk.Frame(self, padding=14)
+        root.pack(fill="both", expand=True)
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
