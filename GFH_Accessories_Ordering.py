@@ -1486,7 +1486,7 @@ class GFHAccessoriesAutomationGUI:
         _cbar.pack(fill="x", side="bottom")
         _cbar.pack_propagate(False)
         tk.Label(_cbar, text=f"Developed by Abad Umair Channa | Copyright © {date.today().year} | All rights reserved.",
-                 font=("Segoe UI", 8), fg="#9d9db8", bg="#090d26").pack(side="left", padx=14, pady=3)
+                 font=("Segoe UI", 8), fg="#9d9db8", bg="#090d26").pack(expand=True, fill="both")
 
         self.build_style()
         self.load_logo_source()

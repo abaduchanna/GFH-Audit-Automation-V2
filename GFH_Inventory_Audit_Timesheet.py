@@ -2723,14 +2723,16 @@ class GFHApp(tk.Tk):
         self._theme_btn.pack()
         self._theme_btn._tag = "header"
 
-        # Title — placed DIRECTLY on header with relx=0.5 so it is truly
-        # centered relative to the ENTIRE header width.
+        # CENTER: Title — spans the ENTIRE header (relwidth=1.0, relheight=1.0)
+        # so anchor="center" centers text both H and V within the full header.
+        # lower() puts it behind logo/divider/theme button so they stay visible.
         _title_lbl = tk.Label(
             header, text=APP_NAME,
             font=("Segoe UI", 18, "bold"), fg="#ffffff", bg=self.COLOR_NAVY,
             anchor="center"
         )
-        _title_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        _title_lbl.place(relx=0.0, rely=0.0, relwidth=1.0, relheight=1.0)
+        _title_lbl.lower()
         _title_lbl._tag = "header"
 
         root = ttk.Frame(self, padding=14)
