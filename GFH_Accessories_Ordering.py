@@ -1606,6 +1606,7 @@ class GFHAccessoriesAutomationGUI:
         # center it (DPI-aware), then stay a normal resizable top-level so
         # Windows Snap (50% left/right, corners, Win+arrow) keeps working.
         self._apply_dynamic_geometry()
+        self.root.after(10, lambda: self.root.state("zoomed"))
 
         self.root.after(120, self.process_queues)
 
