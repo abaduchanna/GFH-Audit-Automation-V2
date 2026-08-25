@@ -2076,9 +2076,7 @@ class GFHAccessoriesAutomationGUI:
         self.start_btn.pack(fill=tk.X, pady=(2, 8))
         self.stop_btn = ttk.Button(parent, text="■ Stop", command=self.stop_automation, style="Dark.TButton")
         self.stop_btn.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(parent, text="🌐 Open Edge Browser", command=self.open_edge_browser, style="GFH.TButton").pack(fill=tk.X, pady=(0, 8))
         ttk.Button(parent, text="Test Login", command=self.test_login, style="GFH.TButton").pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(parent, text="Open Script Folder", command=self.open_script_folder, style="GFH.TButton").pack(fill=tk.X)
 
     def build_log(self, parent):
         self.log_text = ScrolledText(parent, height=13, bg="#020817", fg="#E5E7EB", insertbackground=WHITE, relief=tk.FLAT, font=("Consolas", 9), wrap=tk.WORD)
@@ -2174,28 +2172,6 @@ class GFHAccessoriesAutomationGUI:
         with open(path, "w", encoding="utf-8") as f:
             f.write(self.log_text.get("1.0", tk.END))
         messagebox.showinfo("Saved", f"Log saved:\n{path}")
-
-    def open_edge_browser(self):
-        """Open the dedicated Edge automation browser with our profile+port."""
-        if is_port_open():
-            messagebox.showinfo("Edge Already Open",
-                                "The automation Edge browser is already running.\n"
-                                "You can click Start Automation now.")
-            return
-        log("Opening dedicated Edge automation browser...")
-        if open_vpn_setup_browser(log=log):
-            log("Edge is ready. Click Start Automation to begin.")
-        else:
-            messagebox.showwarning("Edge Failed",
-                                   "Could not open the automation Edge browser.\n"
-                                   "Make sure Microsoft Edge is installed.")
-
-    def open_script_folder(self):
-        folder = os.path.dirname(os.path.abspath(__file__))
-        try:
-            os.startfile(folder)
-        except Exception:
-            webbrowser.open(Path(folder).as_uri())
 
     def build_selected_stores(self):
         selected = self.selected_aliases()
