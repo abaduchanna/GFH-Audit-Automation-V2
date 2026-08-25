@@ -540,6 +540,75 @@ def variance_key(store: str, imei: str, product: str, status: str, created_by: s
     return hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 
+
+# ── win32api keyboard fallback (for Python 3.14 where pynput breaks) ────────
+_WA_VK_MAP = {
+    "ctrl": 0x11, "control": 0x11, "alt": 0x12, "menu": 0x12,
+    "shift": 0x10, "win": 0x5B, "enter": 0x0D, "return": 0x0D,
+    "tab": 0x09, "esc": 0x1B, "escape": 0x1B, "backspace": 0x08,
+    "delete": 0x2E, "del": 0x2E, "home": 0x24, "end": 0x23,
+    "pageup": 0x21, "pagedown": 0x22, "up": 0x26, "down": 0x28,
+    "left": 0x25, "right": 0x27, "space": 0x20, "a": 0x41, "c": 0x43,
+    "f": 0x46, "v": 0x56, "x": 0x58,
+}
+
+def _wa_win32_key_down(vk_code):
+    import ctypes
+    ctypes.windll.user32.keybd_event(vk_code, 0, 0, 0)
+
+def _wa_win32_key_up(vk_code):
+    import ctypes
+    ctypes.windll.user32.keybd_event(vk_code, 0, 0x0002, 0)
+
+def _wa_win32_hotkey(*keys):
+    codes = []
+    for k in keys:
+        k_lower = k.lower()
+        if k_lower in _WA_VK_MAP:
+            codes.append(_WA_VK_MAP[k_lower])
+        elif len(k) == 1:
+            codes.append(ord(k.upper()))
+        else:
+            return
+    for code in codes:
+        _wa_win32_key_down(code)
+    for code in reversed(codes):
+        _wa_win32_key_up(code)
+
+def _wa_win32_press(key):
+    k_lower = key.lower()
+    if k_lower in _WA_VK_MAP:
+        code = _WA_VK_MAP[k_lower]
+    elif len(key) == 1:
+        code = ord(key.upper())
+    else:
+        return
+    _wa_win32_key_down(code)
+    _wa_win32_key_up(code)
+
+def _wa_win32_write(text, interval=0.0):
+    import ctypes
+    for char in text:
+        vk = ctypes.windll.user32.VkKeyScanW(ord(char))
+        if vk == -1:
+            continue
+        code = vk & 0xFF
+        shift = (vk >> 8) & 1
+        if shift:
+            _wa_win32_key_down(_WA_VK_MAP["shift"])
+        _wa_win32_key_down(code)
+        _wa_win32_key_up(code)
+        if shift:
+            _wa_win32_key_up(_WA_VK_MAP["shift"])
+        if interval > 0:
+            import time as _t
+            _t.sleep(interval)
+
+_wa_hotkey = _wa_win32_hotkey
+_wa_press = _wa_win32_press
+_wa_write = _wa_win32_write
+
+
 class RobustXlsxReader:
     """Small XLSX reader with a fallback for exports missing a central ZIP directory."""
 
@@ -2193,13 +2262,13 @@ class WhatsAppSender:
             keys = [k.strip() for k in shortcut.split() if k.strip()]
         if not keys:
             keys = ["ctrl", "f"]
-        pyautogui.hotkey(*keys)
+        _wa_hotkey(*keys)
         time.sleep(0.7)
-        pyautogui.hotkey("ctrl", "a")
+        _wa_hotkey("ctrl", "a")
         time.sleep(0.2)
-        pyautogui.write(group_name, interval=0.01)
+        _wa_write(group_name, interval=0.01)
         time.sleep(1.2)
-        pyautogui.press("enter")
+        _wa_press("enter")
         time.sleep(1.5)
 
     @staticmethod
@@ -2210,9 +2279,9 @@ class WhatsAppSender:
         try:
             import pyperclip
             pyperclip.copy(text)
-            pyautogui.hotkey("ctrl", "v")
+            _wa_hotkey("ctrl", "v")
         except Exception:
-            pyautogui.write(text, interval=0.01)
+            _wa_write(text, interval=0.01)
 
     def send_image(self, group_name: str, image_path: Path, text_message: str = "") -> None:
         if self.mode == "web":
@@ -2229,7 +2298,7 @@ class WhatsAppSender:
         self._copy_image_to_clipboard(image_path)
 
         # Paste the image — this opens WhatsApp's image-preview/send dialog
-        pyautogui.hotkey("ctrl", "v")
+        _wa_hotkey("ctrl", "v")
         # Wait for the preview dialog to fully load before doing anything else
         time.sleep(3.0)
 
@@ -2242,7 +2311,7 @@ class WhatsAppSender:
             time.sleep(0.8)
 
         # Send the image (Enter confirms the image-preview dialog)
-        pyautogui.press("enter")
+        _wa_press("enter")
         time.sleep(2.0)
         self.log(f"Sent image to {group_name}")
 
@@ -2268,7 +2337,7 @@ class WhatsAppSender:
         self.log("Sending WhatsApp text message...")
         self._paste_text(pyautogui, message)
         time.sleep(0.7)
-        pyautogui.press("enter")
+        _wa_press("enter")
         time.sleep(1.0)
         self.log(f"Sent text to {group_name}")
 
