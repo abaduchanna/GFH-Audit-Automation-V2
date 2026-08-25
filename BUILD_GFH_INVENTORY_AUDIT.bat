@@ -95,9 +95,13 @@ echo.
 echo Building GFH_Inventory_Audit.exe...
 echo This may take 2-5 minutes on first run...
 echo ============================================================================
-echo.
 
-pyinstaller GFH_Inventory_Audit.spec --clean --noconfirm
+REM ── Redirect workpath to TEMP to avoid OneDrive sync issues ──
+set "WORKBASE=%TEMP%\pyi_build\GFH_Inventory_Audit"
+if exist "%WORKBASE%" rmdir /s /q "%WORKBASE%"
+mkdir "%WORKBASE%" 2>nul
+
+pyinstaller GFH_Inventory_Audit.spec --clean --noconfirm --workpath "%WORKBASE%"
 
 if errorlevel 1 (
     echo.
