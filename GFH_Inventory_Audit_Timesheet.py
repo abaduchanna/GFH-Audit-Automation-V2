@@ -2679,7 +2679,7 @@ class GFHApp(tk.Tk):
             text=f"Developed by Abad Umair Channa | Copyright \u00a9 {date.today().year} | All rights reserved.",
             font=("Segoe UI", 8), fg="#c7cbe0", bg="#090d26",
         )
-        _clbl.place(relx=0.5, rely=0.5, anchor="center")
+        _clbl.pack(expand=True, fill="both")
         _clbl._tag = "footer"
 
 
@@ -2723,12 +2723,10 @@ class GFHApp(tk.Tk):
         self._theme_btn.pack()
         self._theme_btn._tag = "header"
 
-        # Title — fills remaining space, truly centered
-        title_wrap = tk.Frame(header, bg=self.COLOR_NAVY)
-        title_wrap.pack(side="left", fill="both", expand=True)
-        title_wrap._tag = "header"
+        # Title — placed DIRECTLY on header with relx=0.5 so it is truly
+        # centered relative to the ENTIRE header width.
         _title_lbl = tk.Label(
-            title_wrap, text=APP_NAME,
+            header, text=APP_NAME,
             font=("Segoe UI", 18, "bold"), fg="#ffffff", bg=self.COLOR_NAVY,
             anchor="center"
         )

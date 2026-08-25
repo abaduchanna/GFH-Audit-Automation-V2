@@ -2592,7 +2592,7 @@ class GFHApp(tk.Tk):
             text=f"Developed by Abad Umair Channa | Copyright \u00a9 {date.today().year} | All rights reserved.",
             font=("Segoe UI", 8), fg="#c7cbe0", bg="#090d26",
         )
-        _clbl.place(relx=0.5, rely=0.5, anchor="center")
+        _clbl.pack(expand=True, fill="both")
         _clbl._tag = "footer"
 
 
@@ -2622,10 +2622,10 @@ class GFHApp(tk.Tk):
         _div.pack(side="left", fill="y", padx=(14, 14), pady=10)
         _div._tag = "header"
 
-        title_wrap = ttk.Frame(header, style="Brand.TFrame")
-        title_wrap.pack(side="left", fill="x", expand=True)
-        _title_lbl = ttk.Label(title_wrap, text=APP_NAME, style="Header.TLabel", anchor="center")
-        _title_lbl.pack(fill="x")
+        # CENTER: Title — placed DIRECTLY on header with relx=0.5 so it is
+        # truly centered relative to the ENTIRE header width.
+        _title_lbl = ttk.Label(header, text=APP_NAME, style="Header.TLabel", anchor="center")
+        _title_lbl.place(relx=0.5, rely=0.5, anchor="center")
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
