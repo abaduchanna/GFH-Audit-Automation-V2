@@ -361,16 +361,17 @@ class CPWHOrderAutomator:
         self.password = password or "[REDACTED]"
         self.stop_event = stop_event or threading.Event()
         log("Setting up Microsoft Edge browser...")
-        options = Options()
-        options.add_argument("--start-maximized")
-        options.page_load_strategy = 'eager'
         try:
-            service = Service(EdgeChromiumDriverManager().install())
-            self.driver = webdriver.Edge(service=service, options=options)
+            # Use the shared create_edge_driver() which handles the
+            # dedicated profile + port pattern (attach to open Edge).
+            self.driver = create_edge_driver(log=log)
         except Exception as e1:
-            log(f"⚠️ Auto driver failed: {e1}")
+            log(f"⚠️ Attach-to-open Edge failed: {e1}")
             log("🔄 Trying native system driver...")
             try:
+                options = Options()
+                options.add_argument("--start-maximized")
+                options.page_load_strategy = 'eager'
                 self.driver = webdriver.Edge(options=options)
             except Exception as e2:
                 log(f"❌ CRITICAL: Browser failed to launch.")
@@ -1456,6 +1457,109 @@ GFH_LOGO_PNG_B64 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 GFH_ICON_ICO_B64 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "gfh_icon_ico_b64.txt"), "r").read().strip() if not getattr(sys, "frozen", False) else open(os.path.join(getattr(sys, "_MEIPASS", "."), "assets", "gfh_icon_ico_b64.txt"), "r").read().strip()
 GFH_SQUARE_ICON_B64 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "gfh_square_icon_b64.txt"), "r").read().strip() if not getattr(sys, "frozen", False) else open(os.path.join(getattr(sys, "_MEIPASS", "."), "assets", "gfh_square_icon_b64.txt"), "r").read().strip()
 
+# ── Edge automation profile + port ───────────────────────────────────────────
+# Distinct from Extractor (9222), Ordering (9223), Transfer Bot (9224),
+# UPS (9225), Scraper (9226) so running multiple GFH/VidaPay tools at
+# once each gets its own Edge process/window instead of colliding.
+AUTOMATION_PROFILE_DIR = r"C:\GFH_Edge_Automation_Profile_AccessoriesOrdering"
+REMOTE_DEBUGGING_PORT = 9227
+ATTACH_TO_OPEN_EDGE = True
+
+
+# ── Edge automation helpers (profile + port pattern) ─────────────────────────
+
+def get_edge_exe_path():
+    """Find the Edge executable on Windows."""
+    import shutil as _sh
+    possible_paths = [
+        _sh.which("msedge"),
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ]
+    for path in possible_paths:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+def is_port_open(host="127.0.0.1", port=REMOTE_DEBUGGING_PORT, timeout=1):
+    """Check if the remote debugging port is open (Edge is running)."""
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def open_vpn_setup_browser(url="about:blank", log=print):
+    """Launch a dedicated Edge process with our profile + port."""
+    edge_path = get_edge_exe_path()
+    if not edge_path:
+        log("Microsoft Edge executable not found.")
+        return False
+
+    os.makedirs(AUTOMATION_PROFILE_DIR, exist_ok=True)
+
+    args = [
+        edge_path,
+        f"--remote-debugging-port={REMOTE_DEBUGGING_PORT}",
+        f"--user-data-dir={AUTOMATION_PROFILE_DIR}",
+        "--profile-directory=Default",
+        "--no-first-run",
+        "--no-default-browser-check",
+        url,
+    ]
+
+    try:
+        _acc_sp.Popen(args)
+        log("Opened dedicated Edge automation browser.")
+
+        for _ in range(20):
+            if is_port_open():
+                log("Automation Edge remote connection is ready.")
+                return True
+            time.sleep(0.5)
+
+        log("Edge opened, but remote debugging port is not ready yet.")
+        return False
+    except Exception as e:
+        log(f"Failed to open Edge: {e}")
+        return False
+
+
+def create_edge_driver(log=print):
+    """Create a Selenium Edge driver. If ATTACH_TO_OPEN_EDGE is True,
+    attach to an already-running Edge on our debug port (launching it
+    first if needed). Otherwise, create a standalone driver."""
+    if ATTACH_TO_OPEN_EDGE:
+        if not is_port_open():
+            log("Automation Edge is not open.")
+            log("Opening VPN Browser Setup now.")
+            open_vpn_setup_browser(log=log)
+
+        if not is_port_open():
+            raise RuntimeError(
+                "Automation Edge is not available on remote debugging port. "
+                "Click Open VPN Browser Setup first and keep that Edge window open."
+            )
+
+        options = Options()
+        options.add_experimental_option(
+            "debuggerAddress",
+            f"127.0.0.1:{REMOTE_DEBUGGING_PORT}"
+        )
+
+        driver = webdriver.Edge(options=options)
+        return driver
+
+    # Fallback: standalone driver
+    options = Options()
+    options.add_argument("--start-maximized")
+    options.page_load_strategy = 'eager'
+    driver = webdriver.Edge(options=options)
+    return driver
+
 
 class GFHAccessoriesAutomationGUI:
     def __init__(self):
@@ -1971,6 +2075,7 @@ class GFHAccessoriesAutomationGUI:
         self.start_btn.pack(fill=tk.X, pady=(2, 8))
         self.stop_btn = ttk.Button(parent, text="■ Stop", command=self.stop_automation, style="Dark.TButton")
         self.stop_btn.pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(parent, text="🌐 Open Edge Browser", command=self.open_edge_browser, style="GFH.TButton").pack(fill=tk.X, pady=(0, 8))
         ttk.Button(parent, text="Test Login", command=self.test_login, style="GFH.TButton").pack(fill=tk.X, pady=(0, 8))
         ttk.Button(parent, text="Open Script Folder", command=self.open_script_folder, style="GFH.TButton").pack(fill=tk.X)
 
@@ -2068,6 +2173,21 @@ class GFHAccessoriesAutomationGUI:
         with open(path, "w", encoding="utf-8") as f:
             f.write(self.log_text.get("1.0", tk.END))
         messagebox.showinfo("Saved", f"Log saved:\n{path}")
+
+    def open_edge_browser(self):
+        """Open the dedicated Edge automation browser with our profile+port."""
+        if is_port_open():
+            messagebox.showinfo("Edge Already Open",
+                                "The automation Edge browser is already running.\n"
+                                "You can click Start Automation now.")
+            return
+        log("Opening dedicated Edge automation browser...")
+        if open_vpn_setup_browser(log=log):
+            log("Edge is ready. Click Start Automation to begin.")
+        else:
+            messagebox.showwarning("Edge Failed",
+                                   "Could not open the automation Edge browser.\n"
+                                   "Make sure Microsoft Edge is installed.")
 
     def open_script_folder(self):
         folder = os.path.dirname(os.path.abspath(__file__))
