@@ -53,6 +53,8 @@ a = Analysis(
         'theme_manager',
         'logo_handler',
         'PIL',
+        'openpyxl',
+        'pyautogui',
     ],
     hookspath=[],
     hooksconfig={
