@@ -2622,10 +2622,12 @@ class GFHApp(tk.Tk):
         _div.pack(side="left", fill="y", padx=(14, 14), pady=10)
         _div._tag = "header"
 
-        # CENTER: Title — placed DIRECTLY on header with relx=0.5 so it is
-        # truly centered relative to the ENTIRE header width.
+        # CENTER: Title — spans the ENTIRE header (relwidth=1.0, relheight=1.0)
+        # so anchor="center" centers text both H and V within the full header.
+        # lower() puts it behind logo/divider/theme button so they stay visible.
         _title_lbl = ttk.Label(header, text=APP_NAME, style="Header.TLabel", anchor="center")
-        _title_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        _title_lbl.place(relx=0.0, rely=0.0, relwidth=1.0, relheight=1.0)
+        _title_lbl.lower()
 
         file_box = ttk.LabelFrame(root, text="Upload Files", padding=10)
         file_box.pack(fill="x", pady=(12, 8))
