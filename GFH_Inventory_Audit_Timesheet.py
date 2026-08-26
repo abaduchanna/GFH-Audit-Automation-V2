@@ -995,14 +995,35 @@ def extract_variances(
     if not inventory_records:
         return [], {"completed": 0, "pending": 0, "stores_total": 0, "skipped_sims": 0, "raw_inventory_rows": 0, "latest_inventory_rows": 0, "stale_inventory_rows": 0, "latest_created_by_groups": 0}
 
-    district_by_store, display_by_store, rep_by_store = build_store_maps(inventory_records, time_sheet_records)
+    # Employee (rep) names come from timesheet matched by store.
+    # Store names and Districts come from count details (source of truth).
+    _, _, rep_by_store = build_store_maps(inventory_records, time_sheet_records)
+
+    # Build district/display maps from count details directly
+    district_by_store: Dict[str, str] = {}
+    display_by_store: Dict[str, str] = {}
+    sample0 = inventory_records[0]
+    _store_col0    = find_column(sample0, ["Store"])
+    _district_col0 = find_column(sample0, ["District"])
+    for rec in inventory_records:
+        store_raw = rec.get(_store_col0, "") if _store_col0 else ""
+        norm = normalize_store(store_raw)
+        if not norm:
+            continue
+        display_by_store[norm] = display_store(store_raw)
+        if _district_col0:
+            d = normalize_district(rec.get(_district_col0, ""))
+            if d and d != "Unknown":
+                district_by_store[norm] = d
+
+    # Fill gaps from master store list
     for rec in master_store_records or []:
         district = normalize_district(rec.get("District", ""))
         store = display_store(rec.get("Store", ""))
         norm = normalize_store(store)
         if not norm:
             continue
-        if district and district != "Unknown":
+        if district and district != "Unknown" and norm not in district_by_store:
             district_by_store[norm] = district
         if store and norm not in display_by_store:
             display_by_store[norm] = store
@@ -1118,12 +1139,17 @@ def build_inventory_status_rows(
     master_store_records: Optional[List[Dict[str, str]]] = None,
     source_file: str = "",
 ) -> Tuple[List[InventoryStatusRow], Dict[str, int]]:
-    district_by_store, display_by_store, rep_by_store = build_store_maps(inventory_records, time_sheet_records)
-    master_display_by_store: Dict[str, str] = dict(display_by_store)
-    inv_display_by_store: Dict[str, str] = {}
-    completed_store_norms: set[str] = set()
+    # build_store_maps gives us employee (rep) names matched by store.
+    # It does NOT drive which stores appear — count details is the source of truth.
+    _, _, rep_by_store = build_store_maps(inventory_records, time_sheet_records)
 
-    filtered_records = inventory_records
+    # Build store display names AND districts directly from count details so
+    # every store in the count file appears regardless of timesheet coverage.
+    count_display_by_store: Dict[str, str] = {}
+    count_district_by_store: Dict[str, str] = {}
+    completed_store_norms: set[str] = set()
+    inv_display_by_store: Dict[str, str] = {}
+
     latest_metrics = {
         "raw_inventory_rows": len(inventory_records),
         "latest_inventory_rows": len(inventory_records),
@@ -1133,27 +1159,70 @@ def build_inventory_status_rows(
 
     if inventory_records:
         sample = inventory_records[0]
-        store_col = find_column(sample, ["Store"])
+        store_col    = find_column(sample, ["Store"])
+        district_col = find_column(sample, ["District"])
+
+        # First pass: collect ALL stores+districts from the count file
+        for rec in inventory_records:
+            store_raw = rec.get(store_col, "") if store_col else ""
+            norm = normalize_store(store_raw)
+            if not norm:
+                continue
+            count_display_by_store[norm] = display_store(store_raw)
+            if district_col:
+                d = normalize_district(rec.get(district_col, ""))
+                if d and d != "Unknown":
+                    count_district_by_store[norm] = d
+
+        # Second pass: find completed stores (those that have records in latest batch)
         if store_col:
             filtered_records, latest_metrics = filter_latest_inventory_records(inventory_records)
             for rec in filtered_records:
                 store_raw = rec.get(store_col, "")
                 norm = normalize_store(store_raw)
-                if not norm:
-                    continue
-                inv_display_by_store[norm] = display_store(store_raw)
-                completed_store_norms.add(norm)
+                if norm:
+                    inv_display_by_store[norm] = display_store(store_raw)
+                    completed_store_norms.add(norm)
 
-    all_store_norms = sorted(set(master_display_by_store.keys()) | set(display_by_store.keys()) | set(inv_display_by_store.keys()) | completed_store_norms)
+    # Fallback: also include master store list for any stores not in count file
+    master_display_by_store: Dict[str, str] = {}
+    master_district_by_store: Dict[str, str] = {}
+    for rec in master_store_records or []:
+        store = display_store(rec.get("Store", ""))
+        norm = normalize_store(store)
+        if not norm:
+            continue
+        master_display_by_store[norm] = store
+        d = normalize_district(rec.get("District", ""))
+        if d and d != "Unknown":
+            master_district_by_store[norm] = d
+
+    # All stores = everything from count file (primary) + master list (fallback)
+    all_store_norms = sorted(
+        set(count_display_by_store.keys())
+        | set(master_display_by_store.keys())
+    )
+
     rows: List[InventoryStatusRow] = []
     for norm in all_store_norms:
-        store = master_display_by_store.get(norm) or display_by_store.get(norm) or inv_display_by_store.get(norm) or norm.title()
-        district = normalize_district(district_by_store.get(norm, "Unknown"))
+        # Display name: count file first, then master list
+        store = (count_display_by_store.get(norm)
+                 or master_display_by_store.get(norm)
+                 or norm.title())
+        # District: count file first, then master list
+        district = normalize_district(
+            count_district_by_store.get(norm)
+            or master_district_by_store.get(norm)
+            or "Unknown"
+        )
         rep_name = safe_text(rep_by_store.get(norm, ""))
         status = "Completed" if norm in completed_store_norms else "Pending"
         key_raw = f"{norm}|{district}|{status}|status"
         key = hashlib.sha1(key_raw.encode("utf-8", errors="ignore")).hexdigest()
-        rows.append(InventoryStatusRow(key=key, district=district, store=store, status=status, rep_name=rep_name, source_file=source_file))
+        rows.append(InventoryStatusRow(
+            key=key, district=district, store=store,
+            status=status, rep_name=rep_name, source_file=source_file
+        ))
 
     summary = {
         "completed": len(completed_store_norms),
