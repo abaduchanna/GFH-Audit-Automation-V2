@@ -2327,26 +2327,8 @@ class WhatsAppSender:
         self.status_callback(text)
 
     def _force_focus_whatsapp(self) -> bool:
-        """Focus WhatsApp Desktop window WITHOUT triggering Windows snap layouts.
-
-        Previous implementation used ``SetForegroundWindow`` directly which on
-        Windows 11 can trigger the snap-layout flyout (the window snaps to half
-        screen) when the cursor lingers near the maximize button or when the
-        call happens in certain states. We now:
-
-        * Send a single ``Alt`` keypress first to bypass the foreground lock
-          (this is the standard Win32 trick that makes ``SetForegroundWindow``
-          succeed without ``AttachThreadInput``).
-        * Use ``win32gui.BringWindowToTop(hwnd)`` as the gentle foreground call
-          (it doesn't trigger snap layouts the way ``SetForegroundWindow`` does
-          when the window is already visible).
-        * Use ``ShowWindow(hwnd, SW_SHOWNOACTIVATE)`` (== 4) when the window is
-          minimised/hidden — this restores it to its previous size/position
-          WITHOUT resizing, moving, or maximising it.
-        * Do NOT call ``SW_RESTORE`` (== 9) any more: that can resize a
-          maximised window back to normal, which was sometimes mistaken for
-          snap-layout behaviour.
-        """
+        """Focus WhatsApp Desktop window using ctypes (most reliable on Win10/11).
+        Same approach as GFH_Inventory_Audit.py — simple and proven to work."""
         try:
             import ctypes
             import win32gui
@@ -2357,55 +2339,8 @@ class WhatsAppSender:
             win32gui.EnumWindows(_cb, None)
             if found:
                 hwnd = found[0]
-
-                # SW_SHOWNOACTIVATE = 4 — show at previous size/position without
-                # activating or resizing.  Falls back gracefully if the window
-                # is already visible (it's a no-op then).
-                SW_SHOWNOACTIVATE = 4
-                SW_SHOWNORMAL = 1
-
-                # Only un-minimise if actually minimised; never call SW_RESTORE
-                # because that can resize a maximised window.
-                try:
-                    if win32gui.IsIconic(hwnd):
-                        ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNORMAL)
-                    else:
-                        ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
-                except Exception:
-                    try:
-                        ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
-                    except Exception:
-                        pass
-
-                # Press & release Alt once — this clears the Win32 foreground
-                # lock so the subsequent focus calls succeed even when our
-                # process doesn't currently own the foreground window.
-                try:
-                    VK_MENU = 0x12  # Alt
-                    ctypes.windll.user32.keybd_event(VK_MENU, 0, 0, 0)
-                    ctypes.windll.user32.keybd_event(VK_MENU, 0, 0x0002, 0)
-                except Exception:
-                    pass
-
-                # BringWindowToTop is gentler than SetForegroundWindow and
-                # does NOT trigger snap layouts.  It just raises the window
-                # above other windows in Z-order.
-                try:
-                    win32gui.BringWindowToTop(hwnd)
-                except Exception:
-                    pass
-
-                # As a final belt-and-braces step, try SetForegroundWindow
-                # (now that Alt has been pressed, it should succeed without
-                # raising an ERROR_ACCESS_DENIED).  This call alone, without
-                # the Alt trick, is what used to trigger snap layouts; with
-                # the Alt trick and BringWindowToTop first, it's a no-op-ish
-                # confirmation.
-                try:
-                    ctypes.windll.user32.SetForegroundWindow(hwnd)
-                except Exception:
-                    pass
-
+                ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
                 time.sleep(1.0)
                 return True
         except Exception:
@@ -2449,27 +2384,8 @@ class WhatsAppSender:
             return False
 
     @staticmethod
-    def _copy_image_to_clipboard(image_path: Path) -> bool:
-        """Copy ``image_path`` to the Windows clipboard as both CF_DIB and PNG.
-
-        Returns ``True`` on success, ``False`` on failure (the previous
-        implementation raised silently and the caller had no way to detect
-        failure — that's why the screenshot was sometimes not sent).
-
-        Why both formats:
-          * ``CF_DIB`` is the legacy BMP-less-header bitmap format that every
-            Windows app understands.  WhatsApp Desktop on Win10/11 accepts it.
-          * ``PNG`` (registered via ``RegisterClipboardFormat("PNG")``) is the
-            format WhatsApp Desktop actually prefers on newer builds — when
-            only CF_DIB is on the clipboard, some WhatsApp versions paste a
-            blank image.  Setting both maximises compatibility.
-
-        Why retries:
-          ``OpenClipboard`` fails (returns False / raises) when another app
-          (OneDrive clipboard sync, Snipping Tool, antivirus clipboard
-          scanner, etc.) currently owns the clipboard.  Retrying 5 times with
-          120 ms sleeps virtually always wins the race.
-        """
+    def _copy_image_to_clipboard(image_path: Path) -> None:
+        """Copy image to clipboard — same as GFH_Inventory_Audit.py (proven working)."""
         if Image is None:
             raise RuntimeError("Pillow is required to copy images to clipboard.")
         if not sys.platform.startswith("win"):
@@ -2479,66 +2395,17 @@ class WhatsAppSender:
             import win32con
         except Exception as exc:
             raise RuntimeError("pywin32 is required. Install with: py -m pip install pywin32") from exc
-
         image = Image.open(image_path).convert("RGB")
-
-        # ── CF_DIB payload (BMP minus 14-byte file header) ─────────────────
-        bmp_buf = BytesIO()
-        image.save(bmp_buf, "BMP")
-        dib_data = bmp_buf.getvalue()[14:]
-        bmp_buf.close()
-
-        # ── PNG payload (preferred by WhatsApp Desktop) ────────────────────
-        png_buf = BytesIO()
-        image.save(png_buf, "PNG")
-        png_data = png_buf.getvalue()
-        png_buf.close()
-
-        # Register the "PNG" clipboard format (returns a UINT format id).
-        png_format = None
-        try:
-            png_format = win32clipboard.RegisterClipboardFormat("PNG")
-        except Exception:
-            png_format = None
-
-        # OpenClipboard retries — another process may briefly own the clipboard.
-        opened = False
-        last_exc = None
-        for attempt in range(5):
-            try:
-                win32clipboard.OpenClipboard()
-                opened = True
-                break
-            except Exception as exc:
-                last_exc = exc
-                time.sleep(0.12)
-        if not opened:
-            # Surface the failure to the caller instead of silently swallowing.
-            raise RuntimeError(
-                f"OpenClipboard failed after 5 retries (another process owns it). "
-                f"Last error: {last_exc}"
-            )
-
+        output = BytesIO()
+        image.save(output, "BMP")
+        data = output.getvalue()[14:]
+        output.close()
+        win32clipboard.OpenClipboard()
         try:
             win32clipboard.EmptyClipboard()
-            # Set CF_DIB first (legacy fallback).
-            try:
-                win32clipboard.SetClipboardData(win32con.CF_DIB, dib_data)
-            except Exception:
-                pass
-            # Set PNG format second — WhatsApp Desktop prefers this.
-            if png_format:
-                try:
-                    win32clipboard.SetClipboardData(png_format, png_data)
-                except Exception:
-                    pass
+            win32clipboard.SetClipboardData(win32con.CF_DIB, data)
         finally:
-            try:
-                win32clipboard.CloseClipboard()
-            except Exception:
-                pass
-
-        return True
+            win32clipboard.CloseClipboard()
 
     @staticmethod
     def _type_group_search(pyautogui, group_name: str) -> None:
@@ -2577,82 +2444,30 @@ class WhatsAppSender:
         pyautogui = self._import_pyautogui()
         self.log(f"Opening WhatsApp Desktop for {group_name}...")
         self._open_whatsapp()
-        if not self._force_focus_whatsapp():
-            self.log("WARNING: Could not bring WhatsApp to the foreground. The paste may fail.")
+        self._force_focus_whatsapp()
         self.log(f"Searching group: {group_name}")
         self._type_group_search(pyautogui, group_name)
 
-        caption = safe_text(text_message)
-        caption_typed_into_preview = False
-
-        # ── Copy image to clipboard (both CF_DIB and PNG, with retries) ────
         self.log("Copying image to clipboard...")
-        try:
-            self._copy_image_to_clipboard(image_path)
-        except Exception as exc:
-            # If the clipboard copy itself failed, the paste will do nothing.
-            # Don't try to paste — just send the caption as plain text and
-            # surface the error to the caller via the log.
-            self.log(f"Clipboard copy failed: {exc}")
-            if caption:
-                self.log("Falling back: sending caption as a plain text message.")
-                self._paste_text(pyautogui, caption)
-                time.sleep(0.8)
-                _wa_press("enter")
-                time.sleep(1.2)
-            raise
+        self._copy_image_to_clipboard(image_path)
 
-        # ── Paste the image (opens WhatsApp's image-preview dialog) ────────
-        # Press Ctrl+V once.  Wait long enough for the preview dialog to fully
-        # render before attempting anything else — the previous 3.0 s wait was
-        # too short on slower machines and the caption ended up typed into the
-        # chat input box instead of the preview's caption field.
-        self.log("Pasting image (Ctrl+V)...")
+        # Paste the image — this opens WhatsApp's image-preview/send dialog
         _wa_hotkey("ctrl", "v")
-        time.sleep(4.5)
+        # Wait for the preview dialog to fully load before doing anything else
+        time.sleep(3.0)
 
-        # ── Try typing the caption into the preview's caption field ─────────
-        # WhatsApp Desktop auto-focuses the caption field when the preview
-        # dialog opens, but only after the dialog is fully rendered.  If we
-        # type too early, the keystrokes land in the chat input and the image
-        # is sent without a caption.
+        caption = safe_text(text_message)
         if caption:
             self.log("Typing caption into image preview field...")
-            try:
-                self._paste_text(pyautogui, caption)
-                time.sleep(1.5)
-                caption_typed_into_preview = True
-            except Exception as exc:
-                self.log(f"Caption typing failed in preview: {exc}. Will send caption as separate message.")
-                caption_typed_into_preview = False
+            # WhatsApp Desktop focuses the caption field automatically when the
+            # image preview dialog opens. Type directly into it.
+            self._paste_text(pyautogui, caption)
+            time.sleep(0.8)
 
-        # ── Send the image (Enter confirms the image-preview dialog) ───────
-        try:
-            _wa_press("enter")
-            time.sleep(2.5)
-            self.log(f"Sent image to {group_name}")
-        except Exception as exc:
-            self.log(f"Enter-to-send image failed: {exc}")
-            raise
-
-        # ── Fallback: send caption as a separate text message ──────────────
-        # If the caption couldn't be typed into the preview (or if we suspect
-        # it didn't land there), send it as a separate WhatsApp message in
-        # the same chat.  This guarantees the text reaches the group even
-        # when the in-preview caption typing misfires — at the cost of an
-        # extra message bubble.  Per task spec.
-        if caption and not caption_typed_into_preview:
-            try:
-                self.log("Sending caption as separate text message (fallback)...")
-                # Brief pause to let the image send settle before typing again.
-                time.sleep(1.0)
-                self._paste_text(pyautogui, caption)
-                time.sleep(1.0)
-                _wa_press("enter")
-                time.sleep(1.5)
-                self.log(f"Sent caption text to {group_name}")
-            except Exception as exc:
-                self.log(f"Caption fallback send failed: {exc}")
+        # Send the image (Enter confirms the image-preview dialog)
+        _wa_press("enter")
+        time.sleep(2.0)
+        self.log(f"Sent image to {group_name}")
 
     def _send_image_web(self, group_name: str, image_path: Path, text_message: str = "") -> None:
         """Send image via WhatsApp Web by opening it in the default browser."""
