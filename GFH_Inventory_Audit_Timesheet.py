@@ -853,15 +853,15 @@ def build_store_maps(
             # Skip TOTAL/subtotal rows
             if not emp_raw or "TOTAL" in emp_raw.upper() or "\u2014 " in emp_raw or "-- " in emp_raw:
                 continue
-            # Skip rows with no Clock In — employee didn't actually work
-            clock_in_val = safe_text(rec.get(ts_clock_col, "")) if ts_clock_col else ""
-            if not clock_in_val or clock_in_val.strip() == "":
-                continue
+            # Don't skip rows with no Clock In — the employee may still be
+            # at the store (count pending). Previously we skipped these which
+            # caused "Employee at store: (no timesheet entry)" for pending stores.
             store_raw = rec.get(ts_store_col, "") if ts_store_col else ""
             norm = normalize_store(store_raw)
             if not norm:
                 continue
-            score = numeric_excel_date(clock_in_val)
+            clock_in_val = safe_text(rec.get(ts_clock_col, "")) if ts_clock_col else ""
+            score = numeric_excel_date(clock_in_val) if clock_in_val.strip() else float(idx)
             if score >= latest_ts.get(norm, -1.0):
                 ts_store_to_employee[norm] = emp_raw.strip()
                 latest_ts[norm] = score
