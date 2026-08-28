@@ -357,8 +357,8 @@ def safe_int(value):
 
 class CPWHOrderAutomator:
     def __init__(self, username=None, password=None, stop_event=None):
-        self.username = username or "[REDACTED]"
-        self.password = password or "[REDACTED]"
+        self.username = username or ""
+        self.password = password or ""
         self.stop_event = stop_event or threading.Event()
         log("Setting up Microsoft Edge browser...")
         try:
@@ -2059,10 +2059,10 @@ class GFHAccessoriesAutomationGUI:
 
     def build_credentials(self, parent):
         tk.Label(parent, text="Username", bg=WHITE, fg=TEXT, font=("Segoe UI", 9, "bold")).pack(anchor="w")
-        self.username_var = tk.StringVar(value="[REDACTED]")
+        self.username_var = tk.StringVar(value="")
         tk.Entry(parent, textvariable=self.username_var, font=("Segoe UI", 10), relief=tk.SOLID, bd=1).pack(fill=tk.X, ipady=8, pady=(4, 12))
         tk.Label(parent, text="Password", bg=WHITE, fg=TEXT, font=("Segoe UI", 9, "bold")).pack(anchor="w")
-        self.password_var = tk.StringVar(value="[REDACTED]")
+        self.password_var = tk.StringVar(value="")
         self.password_entry = tk.Entry(parent, textvariable=self.password_var, show="*", font=("Segoe UI", 10), relief=tk.SOLID, bd=1)
         self.password_entry.pack(fill=tk.X, ipady=8, pady=(4, 8))
         self.show_password_var = tk.BooleanVar(value=False)
