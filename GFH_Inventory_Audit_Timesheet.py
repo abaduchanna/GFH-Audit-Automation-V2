@@ -1925,9 +1925,16 @@ class VarianceDatabase:
         exact = {row["RepKey"]: row["Phone"] for row in reps}
         if key in exact:
             return exact[key]
-        key_parts = set(key.split())
+        # Drop single-character tokens (initials like "E" from "Menatallah.E",
+        # "M" from "Abdullah.M"). person_name_key() splits on punctuation, so
+        # dotted usernames become e.g. {"e", "menatallah"} — and the single
+        # letter becomes a required word in the subset check below, which
+        # breaks matching against employees whose names don't contain that
+        # letter as a standalone word. Filtering both sides by len > 1
+        # restores the subset match: {"menatallah"} <= {"elsafty", "menatallah"}.
+        key_parts = {p for p in set(key.split()) if len(p) > 1}
         for row in reps:
-            rep_parts = set((row["RepKey"] or "").split())
+            rep_parts = {p for p in set((row["RepKey"] or "").split()) if len(p) > 1}
             if key_parts and rep_parts and (key_parts <= rep_parts or rep_parts <= key_parts):
                 return row["Phone"]
         return ""
