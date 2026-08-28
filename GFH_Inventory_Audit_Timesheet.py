@@ -1937,9 +1937,13 @@ class VarianceDatabase:
 
         Resolution order:
         1. created_by_mappings by created_by username (most direct — user set this)
-        2. created_by_mappings by employee_name (in case rep_name matches)
-        3. sales_reps table by rep_name (standard lookup)
+        2. created_by_mappings by employee_name (fuzzy/normalized match)
+        3. sales_reps table by rep_name (fuzzy/normalized match)
         4. created_by as a loose sales_reps key (last resort)
+
+        Name matching uses person_name_key() normalization: lowercases,
+        strips punctuation, sorts word tokens.  So "John Smith" matches
+        "smith, john" or "John  Smith" (double space) or "JOHN SMITH".
         """
         # 1. Created By mapping by username
         if created_by:
@@ -1948,14 +1952,16 @@ class VarianceDatabase:
             if mapping.get("phone"):
                 return mapping["phone"]
 
-        # 2. Created By mapping by employee_name match
+        # 2. Created By mapping by employee_name (fuzzy match)
         if rep_name:
-            rn_lower = rep_name.strip().lower()
-            for m in self.get_created_by_mappings():
-                if m.get("employee_name", "").strip().lower() == rn_lower and m.get("phone"):
-                    return m["phone"]
+            rn_key = person_name_key(rep_name)
+            if rn_key:
+                for m in self.get_created_by_mappings():
+                    emp_name = m.get("employee_name", "").strip()
+                    if emp_name and person_name_key(emp_name) == rn_key and m.get("phone"):
+                        return m["phone"]
 
-        # 3. Standard sales_reps lookup
+        # 3. Standard sales_reps lookup (fuzzy match)
         phone = self.find_sales_rep_phone(rep_name)
         if phone:
             return phone
@@ -2683,6 +2689,59 @@ class GFHApp(tk.Tk):
         self.COLOR_MUTED = colors.get("text_dim", "#8090b0")
         self._apply_styles()
         apply_theme_to_window(self, self.theme_manager)
+
+    # ── Window state save/restore for WhatsApp sending ──────────────────
+    # When WhatsApp Desktop is brought to the foreground (via
+    # SetForegroundWindow), Windows can push the audit app's window behind
+    # it or change its state (zoomed → normal).  When the app regains
+    # focus, the window may appear moved/resized ("window layouting").
+    #
+    # These methods save the window's geometry + state before WhatsApp is
+    # focused, and restore it after — so the window stays exactly where
+    # the user put it.
+
+    def _save_window_state(self) -> dict:
+        """Save the current window geometry and state (zoomed/normal/iconic)
+        so it can be restored after WhatsApp steals focus."""
+        try:
+            return {
+                "geometry": self.geometry(),
+                "state": self.state(),
+            }
+        except Exception:
+            return {}
+
+    def _restore_window_state(self, saved: dict) -> None:
+        """Restore window geometry + state saved by _save_window_state.
+        Called after WhatsApp finishes sending — brings the audit app back
+        to the exact position/size/state it was in before."""
+        if not saved:
+            return
+        try:
+            # Restore state first (zoomed/normal), then geometry.
+            # If the window was zoomed (maximized), re-zoom it.
+            # If it was normal, restore the exact geometry.
+            state = saved.get("state", "normal")
+            geom = saved.get("geometry", "")
+            if state == "zoomed":
+                try:
+                    self.state("zoomed")
+                except Exception:
+                    pass
+            elif state == "normal" and geom:
+                try:
+                    self.geometry(geom)
+                except Exception:
+                    pass
+            # Bring the app back to the foreground
+            try:
+                self.lift()
+                self.attributes("-topmost", True)
+                self.after(100, lambda: self.attributes("-topmost", False))
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _apply_dynamic_geometry(self) -> None:
         """Size the window to 90% of the screen and center it.
@@ -5171,7 +5230,9 @@ class GFHApp(tk.Tk):
                     image_path = renderer.render_rows(title, chunk_rows, mode=send_mode_for_file)
                     try:
                         self.set_status(f"Sending {len(chunk_rows)} variance row(s) to {group_name}. {title}.")
+                        _win_state = self._save_window_state()
                         sender.send_image(group_name, image_path, text_message=self.variance_request_message(chunk_rows))
+                        self._restore_window_state(_win_state)
                         self.db.mark_sent(chunk_rows, group_name, title, str(image_path), mode=send_mode_for_file)
                     except Exception as exc:
                         self.db.mark_sent(chunk_rows, group_name, title, str(image_path), mode=send_mode_for_file, error=str(exc))
@@ -5318,12 +5379,16 @@ class GFHApp(tk.Tk):
                     title = batch_title if len(batch_rows) <= 28 else f"{batch_title} | Part {chunk_no}"
                     image_path = self._render_status_rows(title, chunk_rows, mode="inventory status")
                     self.set_status(f"Sending Inventory Audit Status with {len(chunk_rows)} row(s) to {group_name}. {title}.")
+                    _win_state = self._save_window_state()
                     sender.send_image(group_name, image_path, text_message=self.inventory_status_message())
+                    self._restore_window_state(_win_state)
                     self.db.mark_status_sent(chunk_rows)
                     pending_message = self.pending_inventory_count_message(chunk_rows)
                     if pending_message:
                         self.set_status(f"Sending incomplete inventory count reminder to {group_name}.")
+                        _win_state2 = self._save_window_state()
                         sender.send_text(group_name, pending_message)
+                        self._restore_window_state(_win_state2)
             self.refresh_status_table()
             self.set_status("Inventory Audit Status image sending completed.")
         except Exception as exc:
@@ -5448,7 +5513,9 @@ class GFHApp(tk.Tk):
             for district in districts:
                 group_name = group_name_for_district(district, self.db)
                 self.set_status(f"Sending starting message to {group_name}...")
+                _win_state = self._save_window_state()
                 sender.send_text(group_name, message)
+                self._restore_window_state(_win_state)
             self.set_status("Starting message sent to all selected districts.")
         except Exception as exc:
             traceback.print_exc()
@@ -5507,7 +5574,9 @@ class GFHApp(tk.Tk):
                 if rep_mentions:
                     full_message = f"{rep_mentions} {message}"
                 self.set_status(f"Sending reminder {reminder_number}/3 to {group_name}...")
+                _win_state = self._save_window_state()
                 sender.send_text(group_name, full_message)
+                self._restore_window_state(_win_state)
                 time.sleep(2)
             self.set_status(f"Reminder {reminder_number} sent successfully.")
             try:
@@ -5564,7 +5633,9 @@ class GFHApp(tk.Tk):
                     image_path = self._render_no_variance_image(district)
                     status = "No Variance Found"
                 self.set_status(f"Sending final district result to {group_name}.")
+                _win_state = self._save_window_state()
                 sender.send_image(group_name, image_path, text_message=caption)
+                self._restore_window_state(_win_state)
                 final_results.append({
                     "district": district,
                     "stores": self.format_store_list_caption(sorted({safe_text(r.store) for r in district_rows if safe_text(r.store)})),
