@@ -13,3 +13,7 @@ webdriver-manager>=4.0.0
 pdfplumber>=0.9.0
 pypdf>=3.0.0
 requests>=2.31.0
+
+# OCR IMEI Extraction & Matching (v2 Feature)
+pytesseract>=0.3.10
+opencv-python>=4.6.0
