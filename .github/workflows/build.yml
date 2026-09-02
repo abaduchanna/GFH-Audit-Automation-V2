@@ -16,8 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         app:
-          - GFH_Inventory_Audit
-          - GFH_Accessories_Ordering
           - B2BSoft_Inventory_Audit_v2
 
     steps:
