@@ -34,10 +34,23 @@ class DatabaseManager:
                     account_id TEXT,
                     username TEXT,
                     password TEXT,
+                    ts_email TEXT,
+                    ts_password TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Add timesheet credential columns if they don't exist (migration)
+            try:
+                cursor.execute("ALTER TABLE credentials ADD COLUMN ts_email TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            
+            try:
+                cursor.execute("ALTER TABLE credentials ADD COLUMN ts_password TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             
             # 2. Timesheet data (from B2B Soft scraping)
             cursor.execute("""

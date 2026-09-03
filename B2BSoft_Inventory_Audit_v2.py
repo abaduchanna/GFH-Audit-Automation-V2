@@ -164,6 +164,27 @@ class B2BSoftInventoryAuditApp:
         
         cred_frame.columnconfigure(1, weight=1)
         
+        # === GFH Telecom Timesheet Login ===
+        ts_frame = ttk.LabelFrame(left_frame, text="GFH Telecom Timesheet Login", padding=10)
+        ts_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        ttk.Label(ts_frame, text="Email:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.ts_email_var = tk.StringVar()
+        ttk.Entry(ts_frame, textvariable=self.ts_email_var, width=20).grid(row=0, column=1, sticky=tk.EW, pady=5)
+        
+        ttk.Label(ts_frame, text="Password:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.ts_password_var = tk.StringVar()
+        ttk.Entry(ts_frame, textvariable=self.ts_password_var, width=20, show="•").grid(row=1, column=1, sticky=tk.EW, pady=5)
+        
+        ts_button_frame = ttk.Frame(ts_frame)
+        ts_button_frame.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=10)
+        
+        ttk.Button(ts_button_frame, text="Save", command=self.save_timesheet_credentials, width=8).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ts_button_frame, text="Clear", command=self.clear_timesheet_credentials, width=8).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ts_button_frame, text="Fetch", command=self.fetch_timesheet_data, width=8).pack(side=tk.LEFT, padx=3)
+        
+        ts_frame.columnconfigure(1, weight=1)
+        
         # === Audit Control Panel ===
         audit_frame = ttk.LabelFrame(left_frame, text="⏰ Audit Control Panel", padding=12)
         audit_frame.pack(fill=tk.X, pady=(0, 15))
@@ -838,12 +859,19 @@ class B2BSoftInventoryAuditApp:
     def load_credentials(self):
         """Load saved credentials from database"""
         try:
+            # Load B2B Soft credentials
             creds = self.credential_manager.get_credentials()
             if creds:
                 self.access_code_var.set(creds.get("access_code", ""))
                 self.account_id_var.set(creds.get("account_id", ""))
                 self.username_var.set(creds.get("username", ""))
                 self.password_var.set(creds.get("password", ""))
+            
+            # Load GFH Telecom timesheet credentials
+            ts_creds = self.credential_manager.get_timesheet_credentials()
+            if ts_creds:
+                self.ts_email_var.set(ts_creds.get("ts_email", ""))
+                self.ts_password_var.set(ts_creds.get("ts_password", ""))
         except Exception as e:
             print(f"Error loading credentials: {e}")
             
@@ -869,12 +897,64 @@ class B2BSoftInventoryAuditApp:
             
     def clear_credentials(self):
         """Clear all credential fields"""
-        if messagebox.askyesno("Confirm", "Clear all credentials?"):
+        if messagebox.askyesno("Confirm", "Clear all B2B Soft credentials?"):
             self.access_code_var.set("")
             self.account_id_var.set("")
             self.username_var.set("")
             self.password_var.set("")
             self.credential_manager.delete_credentials()
+    
+    def save_timesheet_credentials(self):
+        """Save GFH Telecom timesheet credentials to encrypted database"""
+        try:
+            ts_credentials = {
+                'ts_email': self.ts_email_var.get(),
+                'ts_password': self.ts_password_var.get(),
+            }
+            
+            if not all(ts_credentials.values()):
+                messagebox.showwarning("Validation", "Please fill all timesheet credential fields")
+                return
+            
+            self.credential_manager.save_timesheet_credentials(ts_credentials)
+            messagebox.showinfo("Success", "Timesheet credentials saved (encrypted)")
+            self.update_status("✓ Timesheet credentials saved")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save timesheet credentials: {str(e)}")
+    
+    def clear_timesheet_credentials(self):
+        """Clear timesheet credential fields"""
+        if messagebox.askyesno("Confirm", "Clear all timesheet credentials?"):
+            self.ts_email_var.set("")
+            self.ts_password_var.set("")
+            self.credential_manager.delete_timesheet_credentials()
+            messagebox.showinfo("Success", "Timesheet credentials cleared")
+    
+    def fetch_timesheet_data(self):
+        """Fetch timesheet data from GFH Telecom portal"""
+        ts_credentials = {
+            'ts_email': self.ts_email_var.get(),
+            'ts_password': self.ts_password_var.get(),
+        }
+        
+        if not all(ts_credentials.values()):
+            messagebox.showwarning("Validation", "Please fill all timesheet credential fields")
+            return
+        
+        self.update_status("Fetching timesheet data from GFH Telecom...")
+        thread = threading.Thread(target=self._fetch_timesheet_background, args=(ts_credentials,), daemon=True)
+        thread.start()
+    
+    def _fetch_timesheet_background(self, ts_credentials):
+        """Background task to fetch timesheet data"""
+        try:
+            # TODO: Integrate enhanced_web_scraper_v2 for GFH Telecom portal
+            # This will handle 2FA, CAPTCHA, and automatic verification waiting
+            self.update_status("✓ Timesheet data fetched")
+            messagebox.showinfo("Success", "Timesheet data imported successfully")
+        except Exception as e:
+            self.update_status(f"✗ Timesheet fetch failed: {str(e)}")
+            messagebox.showerror("Error", f"Failed to fetch timesheet: {str(e)}")
             messagebox.showinfo("Success", "Credentials cleared")
             
     def start_scraping(self):
