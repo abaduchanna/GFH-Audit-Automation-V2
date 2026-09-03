@@ -84,3 +84,49 @@ class CredentialManager:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM credentials")
             conn.commit()
+    
+    def save_timesheet_credentials(self, credentials):
+        """Save GFH Telecom timesheet credentials (encrypted)"""
+        encrypted_creds = {}
+        for key, value in credentials.items():
+            if value:
+                encrypted_creds[key] = self.cipher.encrypt(value.encode()).decode()
+        
+        with sqlite3.connect(self.db_manager.db_path) as conn:
+            cursor = conn.cursor()
+            # Insert or update timesheet credentials
+            cursor.execute("""
+                INSERT OR REPLACE INTO credentials (ts_email, ts_password)
+                VALUES (?, ?)
+            """, (
+                encrypted_creds.get("ts_email", ""),
+                encrypted_creds.get("ts_password", "")
+            ))
+            conn.commit()
+    
+    def get_timesheet_credentials(self):
+        """Retrieve and decrypt GFH Telecom timesheet credentials"""
+        with sqlite3.connect(self.db_manager.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ts_email, ts_password FROM credentials LIMIT 1")
+            row = cursor.fetchone()
+            
+            if not row or (not row[0] and not row[1]):
+                return None
+            
+            try:
+                decrypted_creds = {
+                    "ts_email": self.cipher.decrypt(row[0].encode()).decode() if row[0] else "",
+                    "ts_password": self.cipher.decrypt(row[1].encode()).decode() if row[1] else ""
+                }
+                return decrypted_creds
+            except Exception as e:
+                print(f"Failed to decrypt timesheet credentials: {e}")
+                return None
+    
+    def delete_timesheet_credentials(self):
+        """Delete timesheet credentials"""
+        with sqlite3.connect(self.db_manager.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE credentials SET ts_email = NULL, ts_password = NULL")
+            conn.commit()
