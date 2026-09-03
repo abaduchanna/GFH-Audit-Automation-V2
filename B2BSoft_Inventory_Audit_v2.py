@@ -23,6 +23,7 @@ from credential_manager import CredentialManager
 from web_scraper import WebScraper
 from data_parser import DataParser
 from two_sheet_processor import TwoSheetProcessor, process_both_sheets
+from audit_workflow_manager import AuditWorkflowManager
 
 
 class AuditControlPanel:
@@ -86,6 +87,7 @@ class B2BSoftInventoryAuditApp:
         self.scraper = WebScraper()
         self.data_parser = DataParser()
         self.processor = None  # Two-sheet processor (set after import)
+        self.workflow_manager = None  # AuditWorkflowManager (set when audit starts)
         self.audit_panel = AuditControlPanel()
         
         # Monitoring thread
@@ -743,7 +745,7 @@ class B2BSoftInventoryAuditApp:
     # ==================== AUDIT CONTROL FUNCTIONS ====================
     
     def start_audit_workflow(self):
-        """Start the audit workflow"""
+        """Start the audit workflow with selected district"""
         district = self.audit_district_var.get()
         start_time = self.audit_time_var.get()
         
@@ -751,34 +753,118 @@ class B2BSoftInventoryAuditApp:
             messagebox.showwarning("Validation", "Please select a district")
             return
         
-        if not self.audit_panel.set_start_time(start_time):
-            messagebox.showerror("Error", "Invalid time format. Use HH:MM")
+        if not start_time:
+            messagebox.showwarning("Validation", "Please set audit start time")
             return
         
-        self.audit_panel.state = AuditControlPanel.STATE_RUNNING
-        self.update_audit_ui()
+        # Validate time format (HH:MM)
+        try:
+            parts = start_time.split(':')
+            if len(parts) != 2:
+                raise ValueError("Invalid format")
+            hour = int(parts[0])
+            minute = int(parts[1])
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                raise ValueError("Invalid time range")
+        except:
+            messagebox.showerror("Error", "Invalid time format. Use HH:MM (00:00 to 23:59)")
+            return
         
-        messagebox.showinfo("Audit Started", f"Audit for {district} starting at {start_time}\n\nWorkflow:\n1. Send starting message\n2. Export files\n3. Send inventory status\n4. Poll every 15 minutes")
-        self.update_status(f"Audit running for {district} - starting at {start_time}")
+        # Create workflow manager with selected district (if not already created)
+        try:
+            if self.workflow_manager is None:
+                self.workflow_manager = AuditWorkflowManager(
+                    db_manager=self.db_manager,
+                    whatsapp_manager=None  # TODO: wire WhatsApp manager
+                )
+            
+            # Start audit with district and time from UI (NOT hardcoded!)
+            success = self.workflow_manager.start_audit(district, start_time)
+            
+            if not success:
+                messagebox.showerror("Error", "Failed to start audit. Check time format.")
+                return
+            
+            # Update UI state
+            self.audit_panel.state = AuditControlPanel.STATE_RUNNING
+            self.update_audit_ui()
+            
+            # Start UI update thread (just for UI updates, workflow runs in workflow_manager)
+            self.monitoring = True
+            self.monitor_thread = threading.Thread(
+                target=self._update_ui_from_workflow, 
+                daemon=True
+            )
+            self.monitor_thread.start()
+            
+            self.update_status(f"✓ Audit started for {district} at {start_time}")
+            messagebox.showinfo(
+                "Audit Started", 
+                f"Audit for {district} starting at {start_time}\n\n"
+                f"Workflow:\n"
+                f"1. Send starting message to {district} WhatsApp\n"
+                f"2. Export count details & timesheet\n"
+                f"3. Send inventory status\n"
+                f"4. Poll every 15 minutes for completion\n"
+                f"5. Auto-send completion message when done"
+            )
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to start audit: {str(e)}")
+            logger.exception("Audit start error")
         
     def stop_audit_workflow(self):
         """Stop the audit workflow"""
+        if not self.workflow_manager:
+            messagebox.showwarning("Warning", "No audit workflow running")
+            return
+        
         if messagebox.askyesno("Confirm", "Stop audit workflow?"):
-            self.audit_panel.state = AuditControlPanel.STATE_STOPPED
-            self.update_audit_ui()
-            self.update_status("Audit stopped")
+            try:
+                self.workflow_manager.stop_audit()
+                self.audit_panel.state = AuditControlPanel.STATE_STOPPED
+                self.monitoring = False
+                self.update_audit_ui()
+                self.update_status("Audit stopped")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to stop audit: {str(e)}")
             
     def hold_audit_workflow(self):
-        """Hold the audit workflow (pause monitoring)"""
-        self.audit_panel.state = AuditControlPanel.STATE_HELD
-        self.update_audit_ui()
-        self.update_status("Audit held (paused)")
+        """Hold (pause) the audit workflow"""
+        if not self.workflow_manager:
+            messagebox.showwarning("Warning", "No audit workflow running")
+            return
+        
+        try:
+            self.workflow_manager.hold_audit()
+            self.audit_panel.state = AuditControlPanel.STATE_HELD
+            self.update_audit_ui()
+            self.update_status(f"⏸ Audit held (paused) for {self.workflow_manager.district}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to hold audit: {str(e)}")
         
     def resume_audit_workflow(self):
         """Resume the audit workflow"""
-        self.audit_panel.state = AuditControlPanel.STATE_RUNNING
-        self.update_audit_ui()
-        self.update_status("Audit resumed")
+        if not self.workflow_manager:
+            messagebox.showwarning("Warning", "No audit workflow to resume")
+            return
+        
+        try:
+            self.workflow_manager.resume_audit()
+            self.audit_panel.state = AuditControlPanel.STATE_RUNNING
+            self.update_audit_ui()
+            self.update_status(f"▶ Audit resumed for {self.workflow_manager.district}")
+            
+            # Restart UI update thread if needed
+            if not self.monitor_thread or not self.monitor_thread.is_alive():
+                self.monitoring = True
+                self.monitor_thread = threading.Thread(
+                    target=self._update_ui_from_workflow, 
+                    daemon=True
+                )
+                self.monitor_thread.start()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to resume audit: {str(e)}")
         
     def update_audit_ui(self):
         """Update audit control buttons based on state"""
@@ -816,26 +902,33 @@ class B2BSoftInventoryAuditApp:
         self.monitor_thread = threading.Thread(target=self._monitor_audit_workflow, daemon=True)
         self.monitor_thread.start()
         
-    def _monitor_audit_workflow(self):
-        """Background thread for monitoring audit workflow"""
-        while self.monitoring:
+    def _update_ui_from_workflow(self):
+        """Background thread that updates UI based on workflow manager state"""
+        while self.monitoring and self.workflow_manager:
             try:
-                if self.audit_panel.should_send_start_message():
-                    self.update_status("📤 Sending audit start message...")
-                    # TODO: Send WhatsApp message
-                    self.audit_panel.whatsapp_messages_sent.add("start_message")
+                # Get status from workflow manager
+                status_msg = self.workflow_manager.get_status()
+                if status_msg:
+                    self.update_status(status_msg)
                 
-                if self.audit_panel.should_poll():
-                    self.update_status("🔄 Polling for status updates (15-min check)...")
-                    # TODO: Re-scrape count data and check timesheet
-                    self.update_status("✓ Status check complete")
+                # Check workflow state and update UI accordingly
+                from audit_workflow_manager import AuditState
+                
+                if self.workflow_manager.state == AuditState.STOPPED or \
+                   self.workflow_manager.state == AuditState.IDLE:
+                    # Workflow completed or stopped
+                    self.monitoring = False
+                    self.audit_panel.state = AuditControlPanel.STATE_IDLE
+                    self.update_audit_ui()
+                    if self.workflow_manager.state == AuditState.STOPPED:
+                        self.update_status(f"✅ Audit completed for {self.workflow_manager.district}")
                 
                 self.root.update()
                 
             except Exception as e:
-                print(f"Monitor error: {e}")
+                logger.exception(f"UI update error: {e}")
             
-            threading.Event().wait(5)  # Check every 5 seconds
+            threading.Event().wait(2)  # Update UI every 2 seconds
     
     # ==================== DATA POPULATION FUNCTIONS ====================
     
