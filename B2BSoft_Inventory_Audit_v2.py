@@ -24,6 +24,9 @@ from web_scraper import WebScraper
 from data_parser import DataParser
 from two_sheet_processor import TwoSheetProcessor, process_both_sheets
 from audit_workflow_manager import AuditWorkflowManager
+from theme_manager import ThemeManager
+from logo_handler import LogoHandler
+from header_manager import FixedHeaderManager
 
 
 class AuditControlPanel:
@@ -88,6 +91,12 @@ class B2BSoftInventoryAuditApp:
         self.data_parser = DataParser()
         self.processor = None  # Two-sheet processor (set after import)
         self.workflow_manager = None  # AuditWorkflowManager (set when audit starts)
+        
+        # Branding & Theme
+        self.theme_manager = ThemeManager()
+        self.logo_handler = LogoHandler()
+        self.header_manager = FixedHeaderManager(self.root, title="B2B Soft Inventory Audit V2", height=90)
+        
         self.audit_panel = AuditControlPanel()
         
         # Monitoring thread
@@ -102,37 +111,40 @@ class B2BSoftInventoryAuditApp:
         self.start_monitoring()
         
     def setup_gui(self):
-        """Setup main GUI layout"""
+        """Setup main GUI layout with branding and theme"""
+        # Apply theme to window and root
+        self.theme_manager.apply_theme_to_window(self.root)
+        
+        # Setup branded header (logo + title + theme toggle)
+        self.header_manager.set_logo("gfh_icon.ico", text="GFH Telecom")
+        self.header_manager.add_theme_toggle(self.theme_manager, callback=self.on_theme_toggle)
+        
+        # Main content
         main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Header
-        self.setup_header(main_frame)
-        
-        # Content area
-        content_frame = ttk.Frame(main_frame)
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Left panel: Credentials + Audit Control
-        self.setup_left_panel(content_frame)
+        self.setup_left_panel(main_frame)
         
         # Right panel: Tabs
-        self.setup_tabs_panel(content_frame)
+        self.setup_tabs_panel(main_frame)
         
         # Footer
         self.setup_footer(main_frame)
         
-    def setup_header(self, parent):
-        """Setup application header"""
-        header_frame = ttk.Frame(parent, height=80)
-        header_frame.pack(fill=tk.X, padx=0, pady=0)
+        # Load saved credentials
+        self.load_credentials()
         
-        title_label = ttk.Label(
-            header_frame,
-            text="B2B Soft Inventory Audit - Enhanced with Audit Control Panel",
-            font=("Segoe UI", 14, "bold")
-        )
-        title_label.pack(pady=15)
+    def on_theme_toggle(self):
+        """Called when theme toggle button is clicked"""
+        # Theme already toggled in header_manager's callback
+        # Just update all UI elements
+        try:
+            from theme_manager import apply_theme_to_window
+            apply_theme_to_window(self.root, self.theme_manager)
+            self.update_status(f"✓ Theme changed to {self.theme_manager.current_theme}")
+        except Exception as e:
+            logger.warning(f"Theme toggle error: {e}")
         
     def setup_left_panel(self, parent):
         """Setup left panel with credentials + audit control"""
