@@ -22,6 +22,7 @@ from database_manager import DatabaseManager
 from credential_manager import CredentialManager
 from web_scraper import WebScraper
 from data_parser import DataParser
+from two_sheet_processor import TwoSheetProcessor, process_both_sheets
 
 
 class AuditControlPanel:
@@ -84,6 +85,7 @@ class B2BSoftInventoryAuditApp:
         self.credential_manager = CredentialManager(self.db_manager)
         self.scraper = WebScraper()
         self.data_parser = DataParser()
+        self.processor = None  # Two-sheet processor (set after import)
         self.audit_panel = AuditControlPanel()
         
         # Monitoring thread
@@ -664,7 +666,7 @@ class B2BSoftInventoryAuditApp:
             messagebox.showerror("Error", f"Failed to import timesheet: {str(e)}")
             
     def auto_import_both(self):
-        """Auto-import both count and timesheet from uploads folder"""
+        """Auto-import both count and timesheet, process them together"""
         try:
             uploads_dir = Path("/mnt/user-data/uploads")
             
@@ -672,51 +674,62 @@ class B2BSoftInventoryAuditApp:
             count_files = list(uploads_dir.glob("*Count*Result*.Xlsx")) + list(uploads_dir.glob("*Count*Result*.xlsx"))
             timesheet_files = list(uploads_dir.glob("*timesheet*.xlsx")) + list(uploads_dir.glob("*Timesheet*.xlsx"))
             
+            if not count_files:
+                messagebox.showerror("Error", "No count file found in uploads")
+                return
+            
             if not timesheet_files:
                 messagebox.showerror("Error", "No timesheet file found in uploads")
                 return
             
-            # Import timesheet (mandatory)
-            self.update_status("Auto-importing timesheet...")
-            df_ts = pd.read_excel(str(timesheet_files[0]))
+            count_file = str(count_files[0])
+            timesheet_file = str(timesheet_files[0])
             
-            # Clean district codes
-            df_ts['District'] = df_ts['District'].str.strip().str.lower()
-            district_mapping = {
-                'la': 'Louisiana',
-                'tn': 'Tennessee',
-                'tx': 'Texas',
-                'ga': 'Georgia',
-                'az': 'Arizona',
-                'co_east': 'Colorado East',
-                'co_west': 'Colorado West'
-            }
+            self.update_status("Loading and processing both sheets...")
             
-            for code, name in district_mapping.items():
-                df_ts.loc[df_ts['District'] == code, 'District'] = name
+            # Use two-sheet processor
+            success, message, processor = process_both_sheets(
+                count_file,
+                timesheet_file,
+                self.db_manager
+            )
             
-            # Import stores from timesheet
-            store_data = df_ts[['District', 'Store']].dropna().drop_duplicates()
-            for idx, row in store_data.iterrows():
-                try:
-                    self.db_manager.add_store(row['District'], row['Store'])
-                except:
-                    pass  # Duplicate key
+            if not success:
+                messagebox.showerror("Error", f"Processing failed: {message}")
+                return
             
-            # Import employees (skip TOTAL rows)
-            df_ts_clean = df_ts[~df_ts['Employee'].astype(str).str.contains('TOTAL', na=False)]
-            employee_data = df_ts_clean[['Employee']].drop_duplicates()
-            for idx, row in employee_data.iterrows():
-                if pd.notna(row['Employee']):
-                    self.db_manager.add_employee(row['Employee'], phone="", created_by="")
+            # Store processor for later use
+            self.processor = processor
             
-            # If count file exists, also consolidate
-            if count_files:
-                self.update_status("Processing count details...")
-                df_count = pd.read_excel(str(count_files[0]))
-                # Stores already in DB from timesheet
+            # Get summary
+            summary = processor.get_summary()
             
-            self.populate_store_list_tab()
+            self.update_status(
+                f"✓ Processed: {summary['completed_stores']} completed, "
+                f"{summary['pending_stores']} pending, "
+                f"{summary['variances']} variances"
+            )
+            
+            # Populate Tab 1: Audit Status
+            self.populate_audit_status_tab()
+            
+            # Populate Tab 2: Variances
+            self.populate_variance_tab()
+            
+            # Show summary
+            summary_msg = (
+                f"Processing Complete:\n\n"
+                f"Total Stores: {summary['total_stores']}\n"
+                f"Completed: {summary['completed_stores']}\n"
+                f"Pending: {summary['pending_stores']}\n"
+                f"Variances Found: {summary['variances']}\n\n"
+                f"{message}"
+            )
+            messagebox.showinfo("Success", summary_msg)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Auto-import failed: {str(e)}")
+            logger.exception("Auto-import error")
             self.populate_employees_tab()
             
             msg = f"✓ Imported {len(store_data)} stores and {len(employee_data)} employees"
@@ -852,6 +865,70 @@ class B2BSoftInventoryAuditApp:
                 tk.END,
                 text=str(idx),
                 values=(emp.get('employee_name', ''), emp.get('phone', ''), emp.get('created_by', ''))
+            )
+    
+    def populate_audit_status_tab(self):
+        """Populate Audit Status (Tab 1) from processor results"""
+        if not self.processor:
+            messagebox.showwarning("Warning", "No processor data available. Import both sheets first.")
+            return
+        
+        # Clear existing
+        for item in self.audit_status_tree.get_children():
+            self.audit_status_tree.delete(item)
+        
+        # Get audit status rows
+        audit_rows = self.processor.get_audit_status()
+        
+        # Insert into tree
+        for idx, row in enumerate(audit_rows, 1):
+            tags = ()
+            if row["status"] == "Completed":
+                tags = ("completed",)
+            elif row["status"] == "Pending":
+                tags = ("pending",)
+            
+            self.audit_status_tree.insert(
+                "",
+                tk.END,
+                text=str(idx),
+                values=(
+                    row.get("district", ""),
+                    row.get("store", ""),
+                    row.get("employee", ""),
+                    row.get("status", ""),
+                    row.get("percentage", "0%")
+                ),
+                tags=tags
+            )
+    
+    def populate_variance_tab(self):
+        """Populate Variance (Tab 2) from processor results"""
+        if not self.processor:
+            messagebox.showwarning("Warning", "No processor data available. Import both sheets first.")
+            return
+        
+        # Clear existing
+        for item in self.variance_tree.get_children():
+            self.variance_tree.delete(item)
+        
+        # Get variance rows
+        variances = self.processor.get_variances()
+        
+        # Insert into tree
+        for idx, var in enumerate(variances, 1):
+            self.variance_tree.insert(
+                "",
+                tk.END,
+                text=str(idx),
+                values=(
+                    var.get("district", ""),
+                    var.get("store", ""),
+                    var.get("employee", ""),
+                    var.get("imei", ""),
+                    var.get("product", ""),
+                    var.get("status", "")
+                )
             )
     
     # ==================== UTILITY FUNCTIONS ====================
