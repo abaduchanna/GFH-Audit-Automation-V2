@@ -83,6 +83,18 @@ class B2BSoftInventoryAuditApp:
         self.root.title("B2B Soft Inventory Audit - Enhanced with Audit Control")
         self.root.geometry("1600x1000")
         
+        # Set window icon (taskbar + title bar)
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("GFH.B2BSoft.InventoryAudit")
+        except:
+            pass  # Non-Windows or permission issue
+        
+        try:
+            self.root.iconbitmap("gfh_icon.ico")
+        except:
+            pass  # Icon file not found, use default
+        
         # Initialize managers
         self.db_manager = DatabaseManager()
         self.credential_manager = CredentialManager(self.db_manager)
@@ -107,6 +119,16 @@ class B2BSoftInventoryAuditApp:
         
         # Start monitoring thread
         self.start_monitoring()
+        
+    def get_districts_from_db(self):
+        """Load unique districts from database"""
+        try:
+            cursor = self.db_manager.conn.cursor()
+            cursor.execute("SELECT DISTINCT district FROM store_list ORDER BY district")
+            districts = [row[0] for row in cursor.fetchall() if row[0]]
+            return districts if districts else ["Arizona", "Colorado East", "Colorado West", "Atlanta", "Houston", "Louisiana", "Tennessee"]
+        except:
+            return ["Arizona", "Colorado East", "Colorado West", "Atlanta", "Houston", "Louisiana", "Tennessee"]
         
     def setup_gui(self):
         """Setup main GUI layout with branding and theme"""
@@ -209,7 +231,7 @@ class B2BSoftInventoryAuditApp:
         district_combo = ttk.Combobox(
             audit_frame,
             textvariable=self.audit_district_var,
-            values=["Arizona", "Colorado East", "Colorado West", "Atlanta", "Houston", "Louisiana", "Tennessee"],
+            values=self.get_districts_from_db(),
             state="readonly",
             width=20
         )
@@ -407,7 +429,7 @@ class B2BSoftInventoryAuditApp:
         ttk.Combobox(
             add_frame,
             textvariable=self.store_district_var,
-            values=["Arizona", "Colorado East", "Colorado West", "Atlanta", "Houston", "Louisiana", "Tennessee"],
+            values=self.get_districts_from_db(),
             state="readonly"
         ).grid(row=0, column=1, padx=5)
         
@@ -501,7 +523,7 @@ class B2BSoftInventoryAuditApp:
         control_frame.pack(fill=tk.X, pady=10)
         
         ttk.Label(control_frame, text="District:").pack(side=tk.LEFT, padx=5)
-        ttk.Combobox(control_frame, values=["Arizona", "Colorado East"], state="readonly", width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Combobox(control_frame, values=self.get_districts_from_db(), state="readonly", width=20).pack(side=tk.LEFT, padx=5)
         
         ttk.Label(control_frame, text="Group Name:").pack(side=tk.LEFT, padx=5)
         ttk.Entry(control_frame, width=30).pack(side=tk.LEFT, padx=5)
@@ -526,7 +548,7 @@ class B2BSoftInventoryAuditApp:
         control_frame.pack(fill=tk.X, pady=10)
         
         ttk.Label(control_frame, text="District:").pack(side=tk.LEFT, padx=5)
-        ttk.Combobox(control_frame, values=["Arizona"], state="readonly", width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Combobox(control_frame, values=self.get_districts_from_db(), state="readonly", width=20).pack(side=tk.LEFT, padx=5)
         
         ttk.Label(control_frame, text="DM Name:").pack(side=tk.LEFT, padx=5)
         ttk.Entry(control_frame, width=20).pack(side=tk.LEFT, padx=5)
@@ -556,7 +578,7 @@ class B2BSoftInventoryAuditApp:
         controls.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Label(controls, text="District:").grid(row=0, column=0)
-        ttk.Combobox(controls, values=["Arizona"], state="readonly").grid(row=0, column=1, padx=5)
+        ttk.Combobox(controls, values=self.get_districts_from_db(), state="readonly").grid(row=0, column=1, padx=5)
         
         ttk.Label(controls, text="Product:").grid(row=0, column=2)
         ttk.Entry(controls, width=25).grid(row=0, column=3, padx=5)
