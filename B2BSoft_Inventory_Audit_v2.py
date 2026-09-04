@@ -25,7 +25,6 @@ from data_parser import DataParser
 from two_sheet_processor import TwoSheetProcessor, process_both_sheets
 from audit_workflow_manager import AuditWorkflowManager
 from theme_manager import ThemeManager
-from logo_handler import LogoHandler
 from header_manager import FixedHeaderManager
 
 
@@ -94,7 +93,6 @@ class B2BSoftInventoryAuditApp:
         
         # Branding & Theme
         self.theme_manager = ThemeManager()
-        self.logo_handler = LogoHandler()
         self.header_manager = FixedHeaderManager(self.root, title="B2B Soft Inventory Audit V2", height=90)
         
         self.audit_panel = AuditControlPanel()
