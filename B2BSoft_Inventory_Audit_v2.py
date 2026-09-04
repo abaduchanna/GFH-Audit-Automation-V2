@@ -909,7 +909,7 @@ class B2BSoftInventoryAuditApp:
     def start_monitoring(self):
         """Start background monitoring thread"""
         self.monitoring = True
-        self.monitor_thread = threading.Thread(target=self._monitor_audit_workflow, daemon=True)
+        self.monitor_thread = threading.Thread(target=self._update_ui_from_workflow, daemon=True)
         self.monitor_thread.start()
         
     def _update_ui_from_workflow(self):
