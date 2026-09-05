@@ -62,6 +62,7 @@ from theme_manager import ThemeManager
 from header_manager import FixedHeaderManager
 from two_sheet_processor import TwoSheetProcessor, process_both_sheets
 from b2b_scraper import scrape_b2b_inventory
+from gfh_timesheet_scraper import scrape_gfh_timesheet
 
 
 class WorkflowState(Enum):
@@ -174,8 +175,9 @@ class DataExtractionWorker(threading.Thread):
                 logger.info(f"B2B extraction complete: {filepath}")
                 self.app.update_status(f"✓ B2B data extracted: {filepath}")
                 
-                # Queue auto-import in 30 minutes
-                self.queue_auto_import(filepath, delay_seconds=1800)
+                # Store filepath and queue auto-import in 30 minutes
+                self.app.last_b2b_file = filepath
+                self.queue_auto_import(delay_seconds=1800)
             else:
                 self.app.update_status(f"❌ B2B extraction failed: {message}")
                 
@@ -183,22 +185,29 @@ class DataExtractionWorker(threading.Thread):
             logger.error(f"B2B extraction error: {e}")
             self.app.update_status(f"❌ B2B extraction error: {str(e)}")
     
-    def queue_auto_import(self, b2b_file, delay_seconds=1800):
+    def queue_auto_import(self, delay_seconds=1800):
         """Queue auto-import task after delay (default: 30 minutes)"""
         def delayed_import():
             logger.info(f"Auto-import timer started: {delay_seconds}s delay")
             threading.Event().wait(delay_seconds)
             
-            # Queue both extraction and import
+            # Queue timesheet extraction (will run in parallel)
             self.task_queue.put({
                 'type': 'extract_timesheet'
             })
             
-            # After timesheet extracted, trigger auto-import
-            self.task_queue.put({
-                'type': 'auto_import',
-                'b2b_file': b2b_file
-            })
+            # Wait a bit for timesheet to complete, then trigger auto-import
+            threading.Event().wait(60)  # Brief delay for timesheet extraction
+            
+            if self.app.last_b2b_file and self.app.last_timesheet_file:
+                self.task_queue.put({
+                    'type': 'auto_import',
+                    'b2b_file': self.app.last_b2b_file,
+                    'timesheet_file': self.app.last_timesheet_file
+                })
+                logger.info("Auto-import queued with both B2B and timesheet files")
+            else:
+                logger.warning("Auto-import: Missing files (B2B or timesheet)")
         
         import_thread = threading.Thread(target=delayed_import, daemon=True)
         import_thread.start()
@@ -209,12 +218,31 @@ class DataExtractionWorker(threading.Thread):
         self.app.update_status("👥 Extracting timesheet data...")
         
         try:
-            # TODO: Call actual timesheet scraper (BeautifulSoup)
-            logger.info("Timesheet extraction complete")
-            self.app.update_status("✓ Timesheet data extracted")
+            # Get credentials from task or database
+            creds = task.get('credentials') or self.app.credential_manager.get_ts_credentials()
+            
+            if not creds:
+                self.app.update_status("❌ Timesheet credentials not configured")
+                return
+            
+            # Call GFH timesheet scraper
+            success, message, filepath = scrape_gfh_timesheet(
+                email=creds.get('email'),
+                password=creds.get('password')
+            )
+            
+            if success and filepath:
+                logger.info(f"Timesheet extraction complete: {filepath}")
+                self.app.update_status(f"✓ Timesheet data extracted: {filepath}")
+                
+                # Return filepath for auto-import workflow to use
+                self.app.last_timesheet_file = filepath
+            else:
+                self.app.update_status(f"❌ Timesheet extraction failed: {message}")
+                
         except Exception as e:
-            logger.error(f"Timesheet extraction failed: {e}")
-            self.app.update_status(f"❌ Timesheet extraction failed: {e}")
+            logger.error(f"Timesheet extraction error: {e}")
+            self.app.update_status(f"❌ Timesheet extraction error: {str(e)}")
             
     def auto_import_both(self, task):
         """Auto-import Excel files after export"""
@@ -342,6 +370,8 @@ class GFHAuditAutomationApp:
         self.workflow_state = WorkflowState.IDLE
         self.scheduler_enabled = False
         self.scheduled_time = "09:00"
+        self.last_b2b_file = None
+        self.last_timesheet_file = None
         
         # Task queues
         self.extraction_queue = queue.Queue()
