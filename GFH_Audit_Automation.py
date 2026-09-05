@@ -63,6 +63,7 @@ from header_manager import FixedHeaderManager
 from two_sheet_processor import TwoSheetProcessor, process_both_sheets
 from b2b_scraper import scrape_b2b_inventory
 from gfh_timesheet_scraper import scrape_gfh_timesheet
+from whatsapp_messenger import send_whatsapp_message
 
 
 class WorkflowState(Enum):
@@ -320,11 +321,32 @@ class MessengerWorker(threading.Thread):
             try:
                 msg = self.message_queue.get(timeout=5)
                 
-                # TODO: Send message via WhatsApp Desktop/Web
-                logger.info(f"Sending message: {msg['text'][:50]}...")
+                # Extract message details
+                msg_type = msg.get('type', 'notification')
+                phone = msg.get('phone')
+                text = msg.get('text', '')
+                image_path = msg.get('image')
                 
-                # Simulate send with status update
-                self.app.update_status(f"📨 Sent: {msg['type']}")
+                if not phone:
+                    logger.warning("Message missing phone number")
+                    continue
+                
+                # Send via WhatsApp
+                logger.info(f"Sending {msg_type} to {phone}: {text[:50]}...")
+                
+                if image_path:
+                    # Send image with caption
+                    success, response = send_whatsapp_message(phone, text)
+                else:
+                    # Send text message
+                    success, response = send_whatsapp_message(phone, text)
+                
+                if success:
+                    self.app.update_status(f"✓ Sent {msg_type} to {phone}")
+                    logger.info(f"Message sent successfully")
+                else:
+                    self.app.update_status(f"❌ Send failed: {response}")
+                    logger.error(f"Send failed: {response}")
                 
             except queue.Empty:
                 continue
@@ -745,6 +767,35 @@ class GFHAuditAutomationApp:
         """Manually trigger timesheet fetch"""
         self.extraction_queue.put({'type': 'extract_timesheet'})
         self.update_status("👥 Fetching timesheet data...")
+    
+    # ======================== WHATSAPP MESSAGING ========================
+    
+    def send_whatsapp(self, phone: str, text: str, msg_type: str = "notification"):
+        """Queue WhatsApp message"""
+        try:
+            self.message_queue.put({
+                'type': msg_type,
+                'phone': phone,
+                'text': text
+            })
+            logger.info(f"Queued {msg_type} to {phone}")
+        except Exception as e:
+            logger.error(f"Failed to queue message: {e}")
+    
+    def send_kickoff_notification(self, phone: str):
+        """Send kickoff notification"""
+        msg = "🚀 *Audit Kickoff*\n\nInventory audit has started. Monitoring for variance updates."
+        self.send_whatsapp(phone, msg, "kickoff")
+    
+    def send_escalation_reminder(self, phone: str, reminder_num: int):
+        """Send escalation reminder (1, 2, or 3)"""
+        msg = f"⏰ *Reminder {reminder_num}/3*\n\nAudit still in progress. Please submit your inventory count updates."
+        self.send_whatsapp(phone, msg, f"reminder_{reminder_num}")
+    
+    def send_final_report(self, phone: str, cleared: int, pending: int):
+        """Send final audit report"""
+        msg = f"✓ *Audit Complete*\n\nCleared: {cleared}\nPending: {pending}"
+        self.send_whatsapp(phone, msg, "final_report")
     
     def on_closing(self):
         """Cleanup on app close"""
