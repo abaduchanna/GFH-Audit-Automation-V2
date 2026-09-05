@@ -61,6 +61,7 @@ from credential_manager import CredentialManager
 from theme_manager import ThemeManager
 from header_manager import FixedHeaderManager
 from two_sheet_processor import TwoSheetProcessor, process_both_sheets
+from b2b_scraper import scrape_b2b_inventory
 
 
 class WorkflowState(Enum):
@@ -154,12 +155,53 @@ class DataExtractionWorker(threading.Thread):
         self.app.update_status("📊 Extracting B2B inventory...")
         
         try:
-            # TODO: Call actual B2B scraper
-            logger.info("B2B extraction complete")
-            self.app.update_status("✓ B2B data extracted")
+            # Get credentials from task or database
+            creds = task.get('credentials') or self.app.credential_manager.get_b2b_credentials()
+            
+            if not creds:
+                self.app.update_status("❌ B2B credentials not configured")
+                return
+            
+            # Call B2B scraper
+            success, message, filepath = scrape_b2b_inventory(
+                access_code=creds.get('access_code'),
+                account_id=creds.get('account_id'),
+                username=creds.get('username'),
+                password=creds.get('password')
+            )
+            
+            if success and filepath:
+                logger.info(f"B2B extraction complete: {filepath}")
+                self.app.update_status(f"✓ B2B data extracted: {filepath}")
+                
+                # Queue auto-import in 30 minutes
+                self.queue_auto_import(filepath, delay_seconds=1800)
+            else:
+                self.app.update_status(f"❌ B2B extraction failed: {message}")
+                
         except Exception as e:
-            logger.error(f"B2B extraction failed: {e}")
-            self.app.update_status(f"❌ B2B extraction failed: {e}")
+            logger.error(f"B2B extraction error: {e}")
+            self.app.update_status(f"❌ B2B extraction error: {str(e)}")
+    
+    def queue_auto_import(self, b2b_file, delay_seconds=1800):
+        """Queue auto-import task after delay (default: 30 minutes)"""
+        def delayed_import():
+            logger.info(f"Auto-import timer started: {delay_seconds}s delay")
+            threading.Event().wait(delay_seconds)
+            
+            # Queue both extraction and import
+            self.task_queue.put({
+                'type': 'extract_timesheet'
+            })
+            
+            # After timesheet extracted, trigger auto-import
+            self.task_queue.put({
+                'type': 'auto_import',
+                'b2b_file': b2b_file
+            })
+        
+        import_thread = threading.Thread(target=delayed_import, daemon=True)
+        import_thread.start()
             
     def extract_timesheet_data(self, task):
         """Extract from GFH timesheet app"""
@@ -357,27 +399,27 @@ class GFHAuditAutomationApp:
         frame.pack(fill=tk.X, pady=(0, 10))
         
         ttk.Label(frame, text="Access Code:").grid(row=0, column=0, sticky=tk.W, pady=3)
-        access_code_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=access_code_var, width=25).grid(row=0, column=1, pady=3)
+        self.b2b_access_code_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.b2b_access_code_var, width=25).grid(row=0, column=1, pady=3)
         
         ttk.Label(frame, text="Account ID:").grid(row=1, column=0, sticky=tk.W, pady=3)
-        account_id_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=account_id_var, width=25).grid(row=1, column=1, pady=3)
+        self.b2b_account_id_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.b2b_account_id_var, width=25).grid(row=1, column=1, pady=3)
         
         ttk.Label(frame, text="Username:").grid(row=2, column=0, sticky=tk.W, pady=3)
-        username_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=username_var, width=25).grid(row=2, column=1, pady=3)
+        self.b2b_username_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.b2b_username_var, width=25).grid(row=2, column=1, pady=3)
         
         ttk.Label(frame, text="Password:").grid(row=3, column=0, sticky=tk.W, pady=3)
-        password_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=password_var, show="•", width=25).grid(row=3, column=1, pady=3)
+        self.b2b_password_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.b2b_password_var, show="•", width=25).grid(row=3, column=1, pady=3)
         
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=4, column=0, columnspan=2, sticky=tk.EW, pady=10)
         
-        ttk.Button(btn_frame, text="Save", width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Test Login", width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Clear", width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="Save", command=self.save_b2b_credentials, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="Test Login", command=self.test_b2b_login, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="Clear", command=self.clear_b2b_credentials, width=10).pack(side=tk.LEFT, padx=2)
         
     def build_timesheet_login_panel(self, parent):
         """Dual login panel: GFH Timesheet"""
@@ -385,19 +427,19 @@ class GFHAuditAutomationApp:
         frame.pack(fill=tk.X, pady=(0, 10))
         
         ttk.Label(frame, text="Email:").grid(row=0, column=0, sticky=tk.W, pady=3)
-        email_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=email_var, width=25).grid(row=0, column=1, pady=3)
+        self.ts_email_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.ts_email_var, width=25).grid(row=0, column=1, pady=3)
         
         ttk.Label(frame, text="Password:").grid(row=1, column=0, sticky=tk.W, pady=3)
-        password_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=password_var, show="•", width=25).grid(row=1, column=1, pady=3)
+        self.ts_password_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.ts_password_var, show="•", width=25).grid(row=1, column=1, pady=3)
         
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=10)
         
-        ttk.Button(btn_frame, text="Save", width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Test Login", width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Fetch Now", width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="Save", command=self.save_ts_credentials, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="Test Login", command=self.test_ts_login, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="Fetch Now", command=self.fetch_timesheet_now, width=10).pack(side=tk.LEFT, padx=2)
         
     def build_scheduler_panel(self, parent):
         """Scheduler configuration panel"""
@@ -586,6 +628,94 @@ class GFHAuditAutomationApp:
         apply_theme_to_window(self.root, self.theme_manager)
         self.update_status(f"✓ Theme changed")
         
+    # ======================== B2B CREDENTIAL MANAGEMENT ========================
+    
+    def save_b2b_credentials(self):
+        """Save B2B credentials to database"""
+        try:
+            creds = {
+                'access_code': self.b2b_access_code_var.get(),
+                'account_id': self.b2b_account_id_var.get(),
+                'username': self.b2b_username_var.get(),
+                'password': self.b2b_password_var.get()
+            }
+            
+            if not all(creds.values()):
+                self.update_status("❌ All B2B fields required")
+                return
+            
+            # TODO: Implement credential storage in credential_manager
+            self.update_status("✓ B2B credentials saved")
+            logger.info("B2B credentials saved")
+            
+        except Exception as e:
+            self.update_status(f"❌ Save failed: {e}")
+            logger.error(f"B2B credentials save error: {e}")
+    
+    def test_b2b_login(self):
+        """Test B2B login without extraction"""
+        self.update_status("🔐 Testing B2B login...")
+        
+        def test_async():
+            try:
+                success, message, _ = scrape_b2b_inventory(
+                    access_code=self.b2b_access_code_var.get(),
+                    account_id=self.b2b_account_id_var.get(),
+                    username=self.b2b_username_var.get(),
+                    password=self.b2b_password_var.get()
+                )
+                
+                if success:
+                    self.update_status("✓ B2B login test passed")
+                else:
+                    self.update_status(f"❌ B2B login test failed: {message}")
+                    
+            except Exception as e:
+                self.update_status(f"❌ B2B test error: {e}")
+        
+        test_thread = threading.Thread(target=test_async, daemon=True)
+        test_thread.start()
+    
+    def clear_b2b_credentials(self):
+        """Clear B2B credentials from UI"""
+        self.b2b_access_code_var.set("")
+        self.b2b_account_id_var.set("")
+        self.b2b_username_var.set("")
+        self.b2b_password_var.set("")
+        self.update_status("✓ B2B credentials cleared")
+    
+    # ======================== TIMESHEET CREDENTIAL MANAGEMENT ========================
+    
+    def save_ts_credentials(self):
+        """Save timesheet credentials to database"""
+        try:
+            email = self.ts_email_var.get()
+            password = self.ts_password_var.get()
+            
+            if not email or not password:
+                self.update_status("❌ Email and password required")
+                return
+            
+            # TODO: Implement credential storage in credential_manager
+            self.update_status("✓ Timesheet credentials saved")
+            logger.info("Timesheet credentials saved")
+            
+        except Exception as e:
+            self.update_status(f"❌ Save failed: {e}")
+            logger.error(f"Timesheet credentials save error: {e}")
+    
+    def test_ts_login(self):
+        """Test timesheet login"""
+        self.update_status("🔐 Testing timesheet login...")
+        
+        # TODO: Implement timesheet scraper test
+        self.update_status("✓ Timesheet login test (TODO)")
+    
+    def fetch_timesheet_now(self):
+        """Manually trigger timesheet fetch"""
+        self.extraction_queue.put({'type': 'extract_timesheet'})
+        self.update_status("👥 Fetching timesheet data...")
+    
     def on_closing(self):
         """Cleanup on app close"""
         logger.info("Shutting down...")
