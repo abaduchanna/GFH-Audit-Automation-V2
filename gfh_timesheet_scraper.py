@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-GFH Timesheet App Scraper
+GFH Timesheet Scraper - BeautifulSoup Automation
 
-Extracts employee shift/timesheet data from GFH Telecom timesheet app.
+Extracts employee timesheet data from GFH Telecom timesheet app.
 
 Usage:
-  scraper = GFHTimesheetScraper(email, password)
-  success, message, filepath = scraper.scrape()
-  
-Returns XLSX file with columns:
-  - Employee (from "Employee" field)
-  - Store (inferred from duty location)
-  - Date
-  - Clock In
-  - Clock Out
-  - District
+    from gfh_timesheet_scraper import scrape_gfh_timesheet
+    success, msg, filepath = scrape_gfh_timesheet(
+        email="user@example.com",
+        password="password"
+    )
+
+Returns XLSX with columns:
+    - Employee
+    - Store
+    - Date
+    - Clock In
+    - Clock Out
 """
 
 import logging
@@ -28,155 +30,175 @@ try:
     import requests
     from bs4 import BeautifulSoup
     import pandas as pd
-except ImportError as e:
-    print(f"ERROR: Missing dependency: {e}")
-    print("Install: pip install requests beautifulsoup4 pandas openpyxl")
-    exit(1)
+except ImportError:
+    raise ImportError("Required: pip install requests beautifulsoup4 pandas openpyxl")
 
 logger = logging.getLogger(__name__)
 
 
 class GFHTimesheetScraper:
-    """GFH Telecom timesheet app scraper"""
+    """GFH Timesheet scraper"""
     
     BASE_URL = "https://timesheet.gfhtelecoms.com"  # TODO: Confirm actual URL
     
     def __init__(self, email: str, password: str):
-        """
-        Initialize timesheet scraper
-        
-        Args:
-            email: Login email address
-            password: Login password
-        """
         self.email = email
         self.password = password
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0'
         })
-        
-    def _login(self) -> bool:
-        """Authenticate with GFH timesheet app"""
+        self.authenticated = False
+    
+    def login(self) -> bool:
+        """Authenticate with timesheet app"""
         try:
-            logger.info("Authenticating with GFH timesheet app...")
+            logger.info(f"Logging in as {self.email}...")
             
-            # Step 1: Get login page (CSRF token if needed)
+            # Get login page
             login_url = f"{self.BASE_URL}/login"
-            resp = self.session.get(login_url, timeout=20)
+            resp = self.session.get(login_url, timeout=15)
             
             if resp.status_code != 200:
-                logger.error(f"Failed to access login page: {resp.status_code}")
+                logger.error(f"Login page error: {resp.status_code}")
                 return False
             
-            # Step 2: Parse for CSRF token if present
+            # Parse for CSRF token if needed
             soup = BeautifulSoup(resp.content, 'html.parser')
             csrf_token = None
-            
             csrf_input = soup.find('input', {'name': 'csrf_token'})
             if csrf_input and csrf_input.get('value'):
                 csrf_token = csrf_input['value']
-                logger.debug(f"CSRF token found: {csrf_token[:20]}...")
             
-            # Step 3: POST login credentials
+            # POST login
             login_data = {
                 'email': self.email,
                 'password': self.password,
             }
-            
             if csrf_token:
                 login_data['csrf_token'] = csrf_token
             
             auth_resp = self.session.post(
                 login_url,
                 data=login_data,
-                timeout=20,
+                timeout=15,
                 allow_redirects=True
             )
             
-            # Step 4: Verify success (check for dashboard or error message)
-            if 'dashboard' in auth_resp.url.lower() or 'employee' in auth_resp.text.lower():
-                logger.info("✓ Authentication successful")
-                return True
-            elif 'error' in auth_resp.text.lower() or 'invalid' in auth_resp.text.lower():
-                logger.error("Authentication failed: Invalid credentials")
+            # Verify login success
+            if 'error' in auth_resp.text.lower() or 'invalid' in auth_resp.text.lower():
+                logger.error("Login failed - invalid credentials")
                 return False
-            else:
-                logger.info("Authentication completed (status unclear, proceeding)")
-                return True
-                
+            
+            self.authenticated = True
+            logger.info("✓ Login successful")
+            return True
+            
         except Exception as e:
-            logger.error(f"Login failed: {e}")
+            logger.error(f"Login error: {e}")
             return False
     
-    def _fetch_timesheet_data(self) -> Optional[List[Dict]]:
-        """Fetch timesheet records from dashboard"""
+    def fetch_timesheet_data(self) -> Optional[List[Dict]]:
+        """Fetch timesheet records"""
         try:
-            logger.info("Fetching timesheet records...")
-            
-            # Endpoint for timesheet data (may vary based on actual app structure)
-            url = f"{self.BASE_URL}/api/timesheet" or f"{self.BASE_URL}/employee/timesheet"
-            
-            resp = self.session.get(url, timeout=20)
-            
-            if resp.status_code != 200:
-                logger.error(f"Failed to fetch timesheet: {resp.status_code}")
+            if not self.authenticated:
+                logger.error("Not authenticated")
                 return None
             
-            # Try JSON first (API endpoint)
-            try:
-                data = resp.json()
-                if isinstance(data, list):
-                    logger.info(f"Fetched {len(data)} timesheet records (JSON)")
-                    return data
-            except:
-                pass
+            logger.info("Fetching timesheet records...")
             
-            # Fall back to HTML parsing
-            soup = BeautifulSoup(resp.content, 'html.parser')
+            # Try API endpoint first
+            api_urls = [
+                f"{self.BASE_URL}/api/timesheet",
+                f"{self.BASE_URL}/api/employee/timesheet",
+                f"{self.BASE_URL}/employee/timesheet",
+            ]
             
-            # Parse table rows (structure may vary)
+            for url in api_urls:
+                try:
+                    resp = self.session.get(url, timeout=15)
+                    
+                    if resp.status_code == 200:
+                        # Try JSON
+                        try:
+                            data = resp.json()
+                            if isinstance(data, list) and len(data) > 0:
+                                logger.info(f"✓ Fetched {len(data)} records from {url}")
+                                return data
+                        except:
+                            pass
+                        
+                        # Try HTML parsing
+                        soup = BeautifulSoup(resp.content, 'html.parser')
+                        records = self._parse_timesheet_html(soup)
+                        if records:
+                            logger.info(f"✓ Parsed {len(records)} records from {url}")
+                            return records
+                except:
+                    continue
+            
+            logger.warning("Could not fetch timesheet data")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Fetch error: {e}")
+            return None
+    
+    def _parse_timesheet_html(self, soup: BeautifulSoup) -> Optional[List[Dict]]:
+        """Parse timesheet table from HTML"""
+        try:
             records = []
-            rows = soup.find_all('tr', class_='timesheet-row') or soup.find_all('tr')[1:]
             
+            # Find timesheet table
+            table = soup.find('table', {'class': ['timesheet', 'data-table', 'table']})
+            if not table:
+                # Try finding by any table with relevant headers
+                tables = soup.find_all('table')
+                for t in tables:
+                    headers = [th.text.strip().lower() for th in t.find_all('th')]
+                    if any(x in ' '.join(headers) for x in ['employee', 'date', 'clock']):
+                        table = t
+                        break
+            
+            if not table:
+                logger.warning("Timesheet table not found")
+                return None
+            
+            # Parse rows
+            rows = table.find_all('tr')[1:]  # Skip header row
             for row in rows:
                 cols = row.find_all('td')
                 if len(cols) >= 4:
                     record = {
-                        'employee': (cols[0].text.strip() if len(cols) > 0 else ""),
-                        'date': (cols[1].text.strip() if len(cols) > 1 else ""),
-                        'clock_in': (cols[2].text.strip() if len(cols) > 2 else ""),
-                        'clock_out': (cols[3].text.strip() if len(cols) > 3 else ""),
-                        'store': (cols[4].text.strip() if len(cols) > 4 else ""),
+                        'employee': cols[0].text.strip(),
+                        'store': cols[1].text.strip() if len(cols) > 1 else '',
+                        'date': cols[2].text.strip() if len(cols) > 2 else '',
+                        'clock_in': cols[3].text.strip() if len(cols) > 3 else '',
+                        'clock_out': cols[4].text.strip() if len(cols) > 4 else '',
                     }
-                    records.append(record)
+                    if record['employee']:  # Only add if employee name exists
+                        records.append(record)
             
-            logger.info(f"Parsed {len(records)} records from HTML")
             return records if records else None
             
         except Exception as e:
-            logger.error(f"Failed to fetch timesheet data: {e}")
+            logger.error(f"Parse error: {e}")
             return None
     
-    def _parse_and_save_to_excel(self, records: List[Dict]) -> Optional[str]:
-        """Convert records to Excel file"""
+    def export_to_excel(self, records: List[Dict]) -> Optional[str]:
+        """Export records to Excel"""
         try:
-            logger.info(f"Converting {len(records)} records to Excel...")
+            logger.info(f"Exporting {len(records)} records to Excel...")
             
-            # Convert to DataFrame
             df = pd.DataFrame(records)
             
             # Ensure required columns
-            required_cols = ['employee', 'date', 'clock_in', 'store']
-            for col in required_cols:
+            for col in ['employee', 'store', 'date', 'clock_in', 'clock_out']:
                 if col not in df.columns:
-                    df[col] = ""
+                    df[col] = ''
             
-            # Reorder columns
+            # Reorder and select columns
             df = df[['employee', 'store', 'date', 'clock_in', 'clock_out']]
-            
-            # Add district column (empty for now, to be filled by audit workflow)
-            df['district'] = ""
             
             # Save to temp file
             temp_dir = tempfile.gettempdir()
@@ -185,56 +207,44 @@ class GFHTimesheetScraper:
             
             df.to_excel(output_file, sheet_name="Timesheet", index=False)
             
-            logger.info(f"✓ Excel file saved: {output_file}")
+            logger.info(f"✓ Excel saved: {output_file}")
             return str(output_file)
             
         except Exception as e:
-            logger.error(f"Failed to save Excel: {e}")
+            logger.error(f"Excel export error: {e}")
             return None
     
     def scrape(self) -> Tuple[bool, str, Optional[str]]:
-        """
-        Execute full scrape: login → fetch → export
-        
-        Returns:
-            (success, message, filepath_or_none)
-        """
+        """Execute full scrape"""
         try:
-            # Step 1: Login
-            if not self._login():
-                return False, "Authentication failed", None
+            if not self.login():
+                return False, "Login failed", None
             
-            # Step 2: Fetch data
-            records = self._fetch_timesheet_data()
+            records = self.fetch_timesheet_data()
             if not records:
-                return False, "No timesheet records found", None
+                return False, "No timesheet data found", None
             
-            # Step 3: Save to Excel
-            filepath = self._parse_and_save_to_excel(records)
-            if not filepath:
-                return False, "Failed to save Excel file", None
-            
-            logger.info(f"✓ GFH Timesheet scrape complete: {filepath}")
-            return True, f"Exported {len(records)} records", filepath
-            
+            filepath = self.export_to_excel(records)
+            if filepath:
+                return True, f"Exported {len(records)} records", filepath
+            else:
+                return False, "Export failed", None
+                
         except Exception as e:
             logger.exception(f"Scrape failed: {e}")
-            return False, f"Scrape error: {str(e)}", None
+            return False, str(e), None
         finally:
             self.session.close()
 
 
 def scrape_gfh_timesheet(email: str, password: str) -> Tuple[bool, str, Optional[str]]:
-    """
-    Convenience function for GFH timesheet scraping
-    
-    Usage in DataExtractionWorker:
-        success, msg, filepath = scrape_gfh_timesheet(email, password)
-        if success:
-            task_queue.put({'type': 'auto_import', 'timesheet_file': filepath})
-    """
+    """Scrape GFH timesheet - returns (success, message, filepath)"""
     scraper = GFHTimesheetScraper(email, password)
     return scraper.scrape()
 
 
-# Developed by Abad Umair Channa | Copyright © 2026 | All rights reserved.
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    # Test: python gfh_timesheet_scraper.py
+    success, msg, path = scrape_gfh_timesheet("user@example.com", "password")
+    print(f"Success: {success}\nMessage: {msg}\nPath: {path}")

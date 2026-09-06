@@ -1,19 +1,10 @@
-# GFH Accessories Ordering + Inventory Audit
-# Developed by Abad Umair Channa
-
 selenium>=4.0.0
-openpyxl>=3.1.0
-pandas>=2.0.0
-numpy>=1.24.0
-Pillow>=9.0.0
-pyautogui>=0.9.54
-pyperclip>=1.8.0
-pywin32>=306
-webdriver-manager>=4.0.0
-pdfplumber>=0.9.0
-pypdf>=3.0.0
-requests>=2.31.0
-
-# OCR IMEI Extraction & Matching (v2 Feature)
+beautifulsoup4>=4.11.0
+requests>=2.28.0
+pandas>=1.3.0
+openpyxl>=3.0.0
 pytesseract>=0.3.10
-opencv-python>=4.6.0
+Pillow>=9.0.0
+opencv-python>=4.5.0
+cryptography>=38.0.0
+pyinstaller>=5.0.0
